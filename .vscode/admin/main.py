@@ -2,21 +2,24 @@ import customtkinter as ctk
 # Import các class từ các file con
 from gui_dashboard import DashboardFrame
 from gui_customers import CustomerFrame
-# Lưu ý: Import CarFrame để làm trang hiển thị chính, không phải AddCarWindow
 from gui_cars import CarFrame 
+from gui_services import ServiceFrame 
+from gui_inventory import InventoryFrame 
+from gui_employees import EmployeeFrame
+from gui_appointments import AppointmentFrame # 1. THÊM: Import file quản lý lịch hẹn mới
 
 class AutoCareApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("AutoCare Manager - Admin")
-        self.geometry("1100x700")
+        self.geometry("1150x750") 
 
         # Layout chính co giãn
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # --- SIDEBAR ---
-        self.sidebar = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color="#1a1a1a")
+        # --- SIDEBAR (Màu nền tối #1a1a1a như thiết kế) ---
+        self.sidebar = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color="#1a1a1a")
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         
         # Tiêu đề Sidebar
@@ -29,9 +32,14 @@ class AutoCareApp(ctk.CTk):
         self.container.grid_rowconfigure(0, weight=1)
 
         self.frames = {}
-        # KHỞI TẠO CÁC TRANG: Dashboard, Khách hàng và Xe
-        # Thao thêm CarFrame vào danh sách này nhé
-        for F in (DashboardFrame, CustomerFrame, CarFrame):
+        # 2. CẬP NHẬT: Thêm AppointmentFrame vào danh sách khởi tạo
+        pages = (
+            DashboardFrame, CustomerFrame, CarFrame, 
+            ServiceFrame, InventoryFrame, EmployeeFrame, 
+            AppointmentFrame # Thêm ở đây
+        )
+
+        for F in pages:
             page_name = F.__name__
             frame = F(parent=self.container)
             self.frames[page_name] = frame
@@ -39,17 +47,25 @@ class AutoCareApp(ctk.CTk):
 
         # --- NÚT ĐIỀU HƯỚNG SIDEBAR ---
         self.create_nav_button("Tổng quan", "DashboardFrame")
+        self.create_nav_button("Lịch hẹn", "AppointmentFrame") # 3. THÊM: Nút lịch hẹn đặt ở vị trí ưu tiên
         self.create_nav_button("Khách hàng", "CustomerFrame")
-        self.create_nav_button("Xe", "CarFrame") # Nút Xe trỏ về trang CarFrame
+        self.create_nav_button("Xe", "CarFrame")
+        self.create_nav_button("Dịch vụ", "ServiceFrame")
+        self.create_nav_button("Kho hàng", "InventoryFrame")
+        self.create_nav_button("Nhân viên", "EmployeeFrame") 
 
         # Mặc định mở trang Tổng quan khi vừa bật app
         self.show_frame("DashboardFrame")
 
     def create_nav_button(self, text, page_name):
-        """Hàm hỗ trợ tạo nút menu nhanh"""
-        btn = ctk.CTkButton(self.sidebar, text=text, height=40,
-                           fg_color="transparent", anchor="w",
-                           command=lambda: self.show_frame(page_name))
+        """Hàm hỗ trợ tạo nút menu nhanh với hiệu ứng hover"""
+        btn = ctk.CTkButton(self.sidebar, text=text, height=45,
+                            fg_color="transparent", 
+                            text_color="white",
+                            hover_color="#333333",
+                            anchor="w",
+                            font=("Arial", 13),
+                            command=lambda: self.show_frame(page_name))
         btn.pack(pady=5, padx=20, fill="x")
 
     def show_frame(self, page_name):
@@ -57,9 +73,20 @@ class AutoCareApp(ctk.CTk):
         if page_name in self.frames:
             frame = self.frames[page_name]
             frame.tkraise()
-            # Tự động tải lại dữ liệu mới nhất khi bấm vào trang
+            
+            # 4. Tự động tải lại dữ liệu mới nhất khi bấm vào trang
+            # Kiểm tra xem class có hàm load tương ứng không để cập nhật UI
             if hasattr(frame, 'load_data'):
                 frame.load_data()
+            elif hasattr(frame, 'load_services'):
+                frame.load_services()
+            elif hasattr(frame, 'load_inventory'): 
+                frame.load_inventory()
+            elif hasattr(frame, 'load_employees'): 
+                frame.load_employees()
+            # THÊM: Cập nhật danh sách lịch hẹn khi bấm vào menu
+            elif hasattr(frame, 'load_appointments'): 
+                frame.load_appointments()
         else:
             print(f"Lỗi: Không tìm thấy trang {page_name}")
 
