@@ -73,7 +73,6 @@ class ProductSelectionWindow(ctk.CTkToplevel):
         self.product_entries = {}
         for prod in products:
             prod_id, prod_name, needed, stock, price, unit = prod
-            # Chuyển Decimal sang int/float
             needed = int(needed) if needed is not None else 0
             stock = int(stock) if stock is not None else 0
             price = float(price) if price is not None else 0.0
@@ -206,7 +205,6 @@ class PaymentFrame(ctk.CTkFrame):
         for i, text in enumerate(headers):
             ctk.CTkLabel(header_frame, text=text, font=("Arial", 12, "bold"),
                         text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="w")
-        # Cấu hình co giãn cột cho header
         for i in range(len(headers)):
             header_frame.grid_columnconfigure(i, weight=1)
 
@@ -337,14 +335,12 @@ class PaymentFrame(ctk.CTkFrame):
             paid = float(inv[6] or 0)
             remaining = total - paid
 
-            # Lấy dịch vụ
             cursor.execute("SELECT GROUP_CONCAT(service_name SEPARATOR ', ') FROM invoice_items WHERE invoice_id = %s LIMIT 2", (inv_id,))
             services_result = cursor.fetchone()
             services = services_result[0] if services_result and services_result[0] else "Chưa có"
             if len(services) > 40:
                 services = services[:37] + "..."
 
-            # Vật tư
             cursor.execute("SELECT COUNT(*) FROM invoice_products WHERE invoice_id = %s", (inv_id,))
             has_products = cursor.fetchone()[0] > 0
             product_status = "✅ Đã chọn" if has_products else "⚠️ Chưa chọn"
@@ -364,7 +360,6 @@ class PaymentFrame(ctk.CTkFrame):
                 actual_status = "Chưa thanh toán"
 
             row_idx = idx * 2
-            # Sử dụng sticky="ew" để các ô giãn theo chiều ngang khi resize
             ctk.CTkLabel(self.scroll_data, text=f"HD{inv_id:04d}", font=("Arial", 13, "bold"), text_color="#2563eb").grid(row=row_idx, column=0, padx=10, pady=12, sticky="ew")
             ctk.CTkLabel(self.scroll_data, text=customer, font=("Arial", 13)).grid(row=row_idx, column=1, padx=10, pady=12, sticky="ew")
             ctk.CTkLabel(self.scroll_data, text=car_plate, font=("Arial", 12), text_color="#64748b").grid(row=row_idx, column=2, padx=10, pady=12, sticky="ew")
@@ -475,24 +470,124 @@ class PaymentFrame(ctk.CTkFrame):
             self.open_payment_modal(invoice, remaining, is_partial=False)
 
     def find_qr_file(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        possible_paths = [
-            os.path.join(current_dir, "staff", "qr", "QR.png"),
-            os.path.join(current_dir, "qr", "QR.png"),
-            os.path.join(current_dir, "QR.png"),
-            "staff/qr/QR.png",
-            "qr/QR.png",
-            "QR.png"
-        ]
-        for path in possible_paths:
-            if os.path.exists(path):
-                print(f"[QR] Tìm thấy tại: {path}")
-                return path
-        print("[QR] Không tìm thấy file QR.png")
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # FIX CỨNG THEO CẤU TRÚC CỦA BẠN
+        path = os.path.join(base_dir, "qr", "QR.png")
+
+        if os.path.exists(path):
+            print(f"✅ Tìm thấy QR tại: {path}")
+            return path
+
+        print(f"❌ Không tìm thấy QR tại: {path}")
         return None
 
     def open_product_selection(self, service_id, service_name, invoice_id, callback):
         ProductSelectionWindow(self, service_id, service_name, invoice_id, callback)
+
+    def show_qr_confirmation_dialog(self, invoice_id, payment_method, default_amount, payment_note, callback):
+        """Dialog hiển thị QR code và thông tin thanh toán"""
+        qr_dialog = ctk.CTkToplevel(self)
+        qr_dialog.title(f"Xác nhận thanh toán - {payment_method}")
+        qr_dialog.geometry("550x900")
+        qr_dialog.attributes("-topmost", True)
+        qr_dialog.grab_set()
+        qr_dialog.configure(fg_color="white")
+        qr_dialog.resizable(False, False)
+
+        # Tạo frame chính với scroll
+        main_container = ctk.CTkFrame(qr_dialog, fg_color="white")
+        main_container.pack(fill="both", expand=True, side="top")
+
+        # Scrollable frame
+        main_scroll = ctk.CTkScrollableFrame(main_container, fg_color="white")
+        main_scroll.pack(fill="both", expand=True, padx=0, pady=0)
+
+        # Header
+        ctk.CTkLabel(main_scroll, text="📱 QUÉT MÃ QR ĐỂ THANH TOÁN", 
+                    font=("Arial", 16, "bold"), text_color="#2563eb").pack(pady=(20, 10))
+
+        # QR Image
+        qr_frame = ctk.CTkFrame(main_scroll, fg_color="#f8fafc", corner_radius=12, 
+                                border_width=1, border_color="#e2e8f0")
+        qr_frame.pack(fill="x", padx=20, pady=10)
+
+        qr_path = self.find_qr_file()
+        if qr_path:
+            try:
+                img = Image.open(qr_path)
+                img = img.resize((280, 280), Image.Resampling.LANCZOS)
+                qr_img = ctk.CTkImage(light_image=img, dark_image=img, size=(280, 280))
+                qr_label = ctk.CTkLabel(qr_frame, image=qr_img, text="")
+                qr_label.image = qr_img
+                qr_label.pack(pady=15)
+                print(f"✅ QR image loaded successfully")
+            except Exception as e:
+                print(f"❌ Lỗi tải ảnh QR: {str(e)}")
+                ctk.CTkLabel(qr_frame, text=f"❌ Lỗi tải ảnh QR\n{str(e)}", 
+                            font=("Arial", 12), text_color="#ef4444").pack(pady=30)
+        else:
+            ctk.CTkLabel(qr_frame, text="📱 Chưa có file QR.png\nĐặt file QR.png vào thư mục 'qr/'", 
+                        font=("Arial", 12), text_color="#f59e0b").pack(pady=30)
+
+        # Thông tin thanh toán
+        info_frame = ctk.CTkFrame(main_scroll, fg_color="#f1f5f9", corner_radius=12)
+        info_frame.pack(fill="x", padx=20, pady=10)
+
+        if payment_method == "Chuyển khoản":
+            bank_info = "🏦 VIETCOMBANK\n💳 Số TK: 123456789\n👤 Chủ TK: AUTOCARE"
+        elif payment_method == "Momo":
+            bank_info = "📱 VÍ MOMO\n📞 SĐT: 0987654321\n👤 Tên: AUTOCARE"
+        else:
+            bank_info = "📱 VÍ ZALOPAY\n📞 SĐT: 0123456789\n👤 Tên: AUTOCARE"
+
+        ctk.CTkLabel(info_frame, text=bank_info, font=("Arial", 12), 
+                    text_color="#1e293b", justify="left").pack(pady=15, padx=15)
+
+        # Thông tin giao dịch
+        transaction_frame = ctk.CTkFrame(main_scroll, fg_color="white", corner_radius=12,
+                                        border_width=1, border_color="#e2e8f0")
+        transaction_frame.pack(fill="x", padx=20, pady=10)
+
+        ctk.CTkLabel(transaction_frame, text="THÔNG TIN GIAO DỊCH", font=("Arial", 12, "bold"),
+                    text_color="#1e293b").pack(anchor="w", padx=15, pady=(10, 5))
+        
+        trans_info = [
+            ("Mã HĐ:", f"HD{invoice_id:04d}"),
+            ("Nội dung CK:", f"HD{invoice_id:04d}"),
+            ("Số tiền:", f"{int(default_amount):,} ₫")
+        ]
+        
+        for label, value in trans_info:
+            row = ctk.CTkFrame(transaction_frame, fg_color="transparent")
+            row.pack(fill="x", padx=15, pady=5)
+            ctk.CTkLabel(row, text=label, font=("Arial", 11), text_color="#64748b").pack(side="left")
+            ctk.CTkLabel(row, text=value, font=("Arial", 11, "bold"), text_color="#ef4444").pack(side="right")
+
+        ctk.CTkLabel(transaction_frame, text="(Nêu rõ mã hóa đơn trong nội dung chuyển khoản)", 
+                    font=("Arial", 10), text_color="#94a3b8").pack(pady=(0, 10))
+
+        # Warning
+        ctk.CTkLabel(main_scroll, text="⚠️ Vui lòng kiểm tra kỹ thông tin trước khi gửi tiền",
+                    font=("Arial", 11), text_color="#f97316").pack(pady=10)
+
+        # Buttons frame - fixed ở dưới
+        btn_frame = ctk.CTkFrame(qr_dialog, fg_color="white", border_width=1, border_color="#e2e8f0", height=60)
+        btn_frame.pack(fill="x", padx=0, pady=0, side="bottom")
+        btn_frame.pack_propagate(False)
+
+        def confirm_action():
+            print(f"✅ Nút xác nhận được nhấn - Thanh toán {payment_method}")
+            callback()
+            qr_dialog.destroy()
+
+        cancel_btn = ctk.CTkButton(btn_frame, text="Quay lại", fg_color="transparent", text_color="#64748b",
+                     hover_color="#f1f5f9", height=45, command=qr_dialog.destroy)
+        cancel_btn.pack(side="left", fill="both", expand=True, padx=10, pady=8)
+        
+        confirm_btn = ctk.CTkButton(btn_frame, text="✅ Đã chuyển khoản thành công", fg_color="#10b981", 
+                     hover_color="#059669", height=45, command=confirm_action)
+        confirm_btn.pack(side="right", fill="both", expand=True, padx=10, pady=8)
 
     def open_payment_modal(self, invoice, default_amount, is_partial=False):
         modal = ctk.CTkToplevel(self)
@@ -586,46 +681,6 @@ class PaymentFrame(ctk.CTkFrame):
         self.payment_method.pack(fill="x", pady=(5, 0))
         self.payment_method.set("Tiền mặt")
 
-        # QR
-        qr_container = ctk.CTkFrame(form_frame, fg_color="transparent")
-        qr_container.pack(fill="x", pady=10)
-        qr_frame = ctk.CTkFrame(qr_container, fg_color="#f8fafc", corner_radius=12, border_width=1, border_color="#e2e8f0")
-
-        def show_qr(*args):
-            selected_method = self.payment_method.get()
-            if selected_method in ["Chuyển khoản", "Momo", "ZaloPay"]:
-                qr_frame.pack(fill="x", pady=10)
-                for w in qr_frame.winfo_children(): w.destroy()
-                ctk.CTkLabel(qr_frame, text="📱 QUÉT MÃ QR ĐỂ THANH TOÁN", font=("Arial", 14, "bold"), text_color="#2563eb").pack(pady=(15, 5))
-                qr_path = self.find_qr_file()
-                if qr_path:
-                    try:
-                        img = Image.open(qr_path)
-                        img = img.resize((250, 250))
-                        photo = ctk.CTkImage(light_image=img, dark_image=img, size=(250, 250))
-                        ctk.CTkLabel(qr_frame, image=photo, text="").pack(pady=(10, 5))
-                    except Exception as e:
-                        ctk.CTkLabel(qr_frame, text=f"❌ Lỗi tải QR: {str(e)}", font=("Arial", 12), text_color="#ef4444").pack(pady=30)
-                else:
-                    ctk.CTkLabel(qr_frame, text="📱 QR CODE MẪU\n\n(Chưa có file QR.png)\nĐặt file tại staff/qr/QR.png",
-                                font=("Arial", 12), text_color="#f59e0b").pack(pady=30)
-                if selected_method == "Chuyển khoản":
-                    bank_info = "🏦 Ngân hàng: Vietcombank\n💳 Số tài khoản: 123456789\n👤 Chủ tài khoản: AUTOCARE"
-                elif selected_method == "Momo":
-                    bank_info = "📱 Ví Momo\n📞 Số điện thoại: 0987654321\n👤 Tên: AUTOCARE"
-                else:
-                    bank_info = "📱 Ví ZaloPay\n📞 Số điện thoại: 0123456789\n👤 Tên: AUTOCARE"
-                info_text = f"{bank_info}\n📝 Nội dung: HD{invoice_id:04d}\n💰 Số tiền: {int(default_amount):,} ₫\n\n⚠️ Sau khi chuyển khoản, vui lòng nhấn 'Xác nhận' bên dưới!"
-                ctk.CTkLabel(qr_frame, text=info_text, font=("Arial", 11), text_color="#64748b", justify="left").pack(pady=(10, 15))
-                confirm_btn = ctk.CTkButton(qr_frame, text="✅ Xác nhận đã chuyển khoản", fg_color="#10b981", hover_color="#059669", height=45,
-                                           command=lambda: self.process_payment(invoice_id, total_amount, paid_amount, default_amount, modal, selected_products))
-                confirm_btn.pack(pady=(0, 15), padx=20, fill="x")
-            else:
-                qr_frame.pack_forget()
-
-        self.payment_method.bind("<<ComboboxSelected>>", show_qr)
-        self.payment_method.bind("<FocusIn>", show_qr)
-
         # Ghi chú
         note_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
         note_frame.pack(fill="x", pady=15)
@@ -633,21 +688,56 @@ class PaymentFrame(ctk.CTkFrame):
         self.note_entry = ctk.CTkEntry(note_frame, height=40, placeholder_text="Nhập ghi chú (nếu có)")
         self.note_entry.pack(fill="x", pady=(5, 0))
 
-        # Nút
+        # Nút hành động
         btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
         btn_frame.pack(fill="x", pady=20)
         ctk.CTkButton(btn_frame, text="Hủy", fg_color="transparent", text_color="#64748b",
                      hover_color="#f1f5f9", height=45, command=modal.destroy).pack(side="left", fill="x", expand=True, padx=5)
-        cash_btn = ctk.CTkButton(btn_frame, text="✅ Xác nhận thanh toán", fg_color="#10b981", hover_color="#059669",
-                                height=45, command=lambda: self.process_payment(invoice_id, total_amount, paid_amount, default_amount, modal, selected_products))
-        def update_buttons(*args):
-            if self.payment_method.get() == "Tiền mặt":
-                cash_btn.pack(side="right", fill="x", expand=True, padx=5)
+        
+        def handle_payment():
+            payment_method = self.payment_method.get()
+            payment_note = self.note_entry.get()
+            
+            if payment_method in ["Chuyển khoản", "Momo", "ZaloPay"]:
+                # Lưu phương thức thanh toán tạm thời
+                self.temp_payment_info = {
+                    'method': payment_method,
+                    'note': payment_note,
+                    'invoice_id': invoice_id,
+                    'total_amount': total_amount,
+                    'paid_amount': paid_amount,
+                    'default_amount': default_amount,
+                    'selected_products': selected_products
+                }
+                # Hiển thị dialog QR code
+                modal.destroy()
+                self.show_qr_confirmation_dialog(
+                    invoice_id, payment_method, default_amount, payment_note,
+                    self.process_payment_from_qr
+                )
             else:
-                cash_btn.pack_forget()
-        self.payment_method.bind("<<ComboboxSelected>>", update_buttons)
-        update_buttons()
-        cash_btn.pack(side="right", fill="x", expand=True, padx=5)
+                # Thanh toán tiền mặt trực tiếp
+                self.process_payment(invoice_id, total_amount, paid_amount, 
+                                   default_amount, modal, selected_products, payment_method, payment_note)
+        
+        ctk.CTkButton(btn_frame, text="✅ Xác nhận thanh toán", fg_color="#10b981", hover_color="#059669",
+                     height=45, command=handle_payment).pack(side="right", fill="x", expand=True, padx=5)
+
+    def process_payment_from_qr(self):
+        """Xử lý thanh toán từ QR confirmation dialog"""
+        if hasattr(self, 'temp_payment_info'):
+            info = self.temp_payment_info
+            self.process_payment(
+                info['invoice_id'],
+                info['total_amount'],
+                info['paid_amount'],
+                info['default_amount'],
+                None,  # modal = None vì đã destroy
+                info['selected_products'],
+                info['method'],
+                info['note']
+            )
+            del self.temp_payment_info
 
     def update_selected_products(self, products, status_label, select_btn, selected_products):
         selected_products.clear()
@@ -660,9 +750,13 @@ class PaymentFrame(ctk.CTkFrame):
             status_label.configure(text="⚠️ Chưa chọn vật tư nào", text_color="#f97316")
             select_btn.configure(fg_color="#f97316", text="📝 Chọn vật tư đã sử dụng")
 
-    def process_payment(self, invoice_id, total_amount, paid_amount, payment_amount, modal, selected_products):
-        payment_method = self.payment_method.get()
-        note = self.note_entry.get()
+    def process_payment(self, invoice_id, total_amount, paid_amount, payment_amount, modal, selected_products, payment_method=None, note=None):
+        # Nếu không truyền payment_method, lấy từ widget
+        if payment_method is None:
+            payment_method = self.payment_method.get()
+        if note is None:
+            note = self.note_entry.get()
+            
         if payment_method in ["Chuyển khoản", "Momo", "ZaloPay"]:
             if not messagebox.askyesno("Xác nhận", f"Bạn đã chuyển khoản thành công qua {payment_method}?\nHãy xác nhận sau khi hoàn tất giao dịch!"):
                 return
@@ -708,7 +802,8 @@ class PaymentFrame(ctk.CTkFrame):
             else:
                 msg += f"📌 Số tiền còn lại cần thanh toán: {int(remaining_new):,} ₫"
             messagebox.showinfo("Thành công", msg)
-            modal.destroy()
+            if modal is not None:
+                modal.destroy()
             self.load_invoices()
             if hasattr(self.parent_app, 'refresh_dashboard'):
                 self.parent_app.refresh_dashboard()
