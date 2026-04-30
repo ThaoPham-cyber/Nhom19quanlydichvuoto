@@ -1,211 +1,305 @@
 import customtkinter as ctk
-from database import connect_db
 from tkinter import messagebox
 from datetime import datetime
+from tkcalendar import DateEntry
+import re
+from database import connect_db
+
 
 class AppointmentFrame(ctk.CTkFrame):
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="#f8fafc")
+    def __init__(self, master):
+        super().__init__(master, fg_color="#f3f4f6")
+
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
-        # --- HEADER ---
+        # ===== HEADER =====
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=35, pady=(25, 15))
-        
-        ctk.CTkLabel(header, text="Lịch hẹn", font=("Arial", 28, "bold"), text_color="#0f172a").pack(side="left")
-        
-        ctk.CTkButton(header, text="+ Tạo lịch hẹn", fg_color="#2563eb", hover_color="#1d4ed8",
-                      font=("Arial", 13, "bold"), height=40, corner_radius=8,
-                      command=self.open_appointment_modal).pack(side="right")
+        header.grid(row=0, column=0, sticky="ew", padx=25, pady=15)
 
-        # --- SEARCH ---
-        filter_f = ctk.CTkFrame(self, fg_color="transparent")
-        filter_f.grid(row=1, column=0, sticky="ew", padx=35, pady=(0, 20))
-        self.ent_search = ctk.CTkEntry(filter_f, placeholder_text="🔍 Tìm kiếm lịch hẹn...", 
-                                       height=45, fg_color="white", border_color="#e2e8f0")
-        self.ent_search.pack(side="left", fill="x", expand=True)
-        self.ent_search.bind("<KeyRelease>", lambda e: self.load_appointments())
+        ctk.CTkLabel(header, text="Lịch hẹn", font=("Arial", 24, "bold")).pack(side="left")
 
-        # --- LIST AREA ---
-        self.scroll_list = ctk.CTkScrollableFrame(self, fg_color="transparent")
-        self.scroll_list.grid(row=2, column=0, sticky="nsew", padx=30, pady=(0, 20))
-        
-        self.load_appointments()
+        ctk.CTkButton(header, text="+ Tạo lịch hẹn",
+                      fg_color="#2563eb",
+                      command=self.open_modal).pack(side="right")
 
-    def load_appointments(self):
-        """Tải và hiển thị danh sách lịch hẹn ngay lập tức"""
-        for w in self.scroll_list.winfo_children(): w.destroy()
+        # ===== SEARCH =====
+        self.search = ctk.CTkEntry(self, placeholder_text="🔍 Tìm khách / biển số...")
+        self.search.grid(row=1, column=0, sticky="ew", padx=25, pady=(0, 10))
+        self.search.bind("<KeyRelease>", lambda e: self.load())
+
+        # ===== LIST =====
+        self.list_frame = ctk.CTkScrollableFrame(self)
+        self.list_frame.grid(row=2, column=0, sticky="nsew", padx=25, pady=(0, 20))
+
+        self.load()
+
+    # ================= LOAD =================
+    def load(self):
+        for w in self.list_frame.winfo_children():
+            w.destroy()
+
         db = connect_db()
-        if db:
-            try:
-                cursor = db.cursor()
-                search = f"%{self.ent_search.get()}%"
-                # Join với bảng customers và services để lấy thông tin đầy đủ
-                query = """
-                    SELECT a.id, c.full_name, a.car_plate, s.service_name, a.appointment_date, a.status
-                    FROM appointments a
-                    JOIN customers c ON a.customer_id = c.id
-                    LEFT JOIN services s ON a.service_id = s.id
-                    WHERE c.full_name LIKE %s OR a.car_plate LIKE %s
-                    ORDER BY a.appointment_date DESC
-                """
-                cursor.execute(query, (search, search))
-                rows = cursor.fetchall()
-                for row in rows:
-                    self.create_appointment_card(row)
-            except Exception as e:
-                print(f"Lỗi load danh sách: {e}")
-            finally:
-                db.close()
+        if not db:
+            return
 
-    def create_appointment_card(self, appt):
-        """Tạo card lịch hẹn đẹp như hình mẫu"""
-        card = ctk.CTkFrame(self.scroll_list, fg_color="white", corner_radius=12, border_width=1, border_color="#f1f5f9")
+        cursor = db.cursor()
+        search = f"%{self.search.get()}%"
+
+        cursor.execute("""
+            SELECT a.id, c.full_name, a.car_plate,
+                   COALESCE(s.service_name,'Không rõ'),
+                   a.appointment_date, a.status
+            FROM appointments a
+            JOIN customers c ON a.customer_id = c.id
+            LEFT JOIN services s ON a.service_id = s.id
+            WHERE c.full_name LIKE %s OR a.car_plate LIKE %s
+            ORDER BY a.appointment_date DESC
+        """, (search, search))
+
+        for row in cursor.fetchall():
+            self.card(row)
+
+        db.close()
+
+    # ================= CARD =================
+    def card(self, appt):
+        card = ctk.CTkFrame(self.list_frame, fg_color="white",
+                            corner_radius=12, border_width=1)
         card.pack(fill="x", pady=8, padx=5)
-        
-        # Cột trái: Icon và thông tin
-        c_left = ctk.CTkFrame(card, fg_color="transparent")
-        c_left.pack(side="left", padx=20, pady=15)
-        
-        ctk.CTkLabel(c_left, text="📅", font=("Arial", 24)).pack(side="left", padx=(0, 15))
-        
-        info_v = ctk.CTkFrame(c_left, fg_color="transparent")
-        info_v.pack(side="left")
-        ctk.CTkLabel(info_v, text=appt[3] if appt[3] else "Dịch vụ", font=("Arial", 15, "bold")).pack(anchor="w")
-        ctk.CTkLabel(info_v, text=f"👤 {appt[1]}  •  🚗 {appt[2]}", font=("Arial", 13), text_color="#64748b").pack(anchor="w")
 
-        # Cột phải: Thời gian và nút xóa
-        c_right = ctk.CTkFrame(card, fg_color="transparent")
-        c_right.pack(side="right", padx=20)
-        
+        left = ctk.CTkFrame(card, fg_color="transparent")
+        left.pack(side="left", fill="both", expand=True, padx=15, pady=10)
+
+        ctk.CTkLabel(left, text=appt[3],
+                     font=("Arial", 16, "bold")).pack(anchor="w")
+
+        ctk.CTkLabel(left,
+                     text=f"{appt[1]} • {appt[2]}",
+                     text_color="#6b7280").pack(anchor="w")
+
+        status = appt[5]
+        color = {
+            "Chờ xác nhận": "#facc15",
+            "Đã xác nhận": "#60a5fa",
+            "Đã hoàn thành": "#22c55e"
+        }.get(status, "#e5e7eb")
+
+        ctk.CTkLabel(left, text=status,
+                     fg_color=color,
+                     corner_radius=6,
+                     padx=10).pack(anchor="w", pady=5)
+
+        right = ctk.CTkFrame(card, fg_color="transparent")
+        right.pack(side="right", padx=15, pady=10)
+
         dt = appt[4]
-        date_str = dt.strftime('%d/%m/%Y') if dt else "N/A"
-        time_str = dt.strftime('%H:%M') if dt else "--:--"
-        
-        time_v = ctk.CTkFrame(c_right, fg_color="transparent")
-        time_v.pack(side="left", padx=20)
-        ctk.CTkLabel(time_v, text=f"🕒 {time_str}", font=("Arial", 14, "bold")).pack(anchor="e")
-        ctk.CTkLabel(time_v, text=date_str, font=("Arial", 12), text_color="#64748b").pack(anchor="e")
-        
-        ctk.CTkButton(c_right, text="🗑", width=30, text_color="#ef4444", fg_color="transparent", 
-                      hover_color="#fee2e2", command=lambda: self.delete_appointment(appt[0])).pack(side="right")
+        if isinstance(dt, str):
+            dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
 
-    def open_appointment_modal(self):
-        """Mở form thiết lập lịch hẹn chuyên nghiệp"""
-        modal = ctk.CTkToplevel(self)
-        modal.title("Tạo lịch hẹn mới")
-        modal.geometry("650x600")
-        modal.grab_set()
+        ctk.CTkLabel(right, text=dt.strftime("%d/%m/%Y")).pack(anchor="e")
+        ctk.CTkLabel(right, text=dt.strftime("%H:%M")).pack(anchor="e")
 
-        ctk.CTkLabel(modal, text="THÔNG TIN CHI TIẾT LỊCH HẸN", font=("Arial", 20, "bold"), text_color="#2563eb").pack(pady=20)
+        btn = ctk.CTkFrame(right, fg_color="transparent")
+        btn.pack(anchor="e", pady=5)
 
-        container = ctk.CTkFrame(modal, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=40)
+        if status == "Chờ xác nhận":
+            ctk.CTkButton(btn, text="Xác nhận",
+                          command=lambda: self.update(appt[0], "Đã xác nhận")).pack(side="left", padx=3)
 
-        # Lấy danh sách dịch vụ từ DB để đưa vào ComboBox
-        service_list = []
+            ctk.CTkButton(btn, text="Hủy",
+                          fg_color="#ef4444",
+                          command=lambda: self.update(appt[0], "Hủy lịch")).pack(side="left", padx=3)
+
+        elif status == "Đã xác nhận":
+            ctk.CTkButton(btn, text="Hoàn thành",
+                          fg_color="#10b981",
+                          command=lambda: self.update(appt[0], "Đã hoàn thành")).pack(side="left")
+
+        elif status == "Đã hoàn thành":
+            ctk.CTkButton(btn, text="Bàn giao",
+                          fg_color="#2563eb",
+                          command=lambda: self.update(appt[0], "Đã bàn giao")).pack(side="left")
+
+    # ================= UPDATE (FIX FULL) =================
+    def update(self, appt_id, status):
         db = connect_db()
-        if db:
-            cursor = db.cursor()
-            cursor.execute("SELECT id, service_name FROM services")
-            service_data = cursor.fetchall() # Dạng [(1, 'Rửa xe'), (2, 'Thay lốp')...]
-            service_list = [s[1] for s in service_data]
+        if not db:
+            messagebox.showerror("Lỗi", "Không kết nối DB")
+            return
+
+        cursor = db.cursor()
+
+        try:
+            if status == "Đã bàn giao":
+
+                # ✅ check theo appointment_id (chuẩn)
+                cursor.execute("""
+                    SELECT COUNT(*) FROM service_history 
+                    WHERE appointment_id=%s
+                """, (appt_id,))
+                if cursor.fetchone()[0] > 0:
+                    messagebox.showwarning("Thông báo", "Lịch này đã bàn giao rồi!")
+                    return
+
+                # ✅ insert đầy đủ + price
+                cursor.execute("""
+                    INSERT INTO service_history
+                    (appointment_id, customer_id, service_name, plate_number,
+                     service_date, service_time, price, status)
+                    SELECT 
+                        a.id,
+                        a.customer_id,
+                        COALESCE(s.service_name,'Không rõ'),
+                        a.car_plate,
+                        DATE(a.appointment_date),
+                        TIME(a.appointment_date),
+                        COALESCE(s.price,0),
+                        'Hoàn thành'
+                    FROM appointments a
+                    LEFT JOIN services s ON a.service_id = s.id
+                    WHERE a.id=%s
+                """, (appt_id,))
+
+                # ✅ XÓA khỏi appointments
+                cursor.execute("DELETE FROM appointments WHERE id=%s", (appt_id,))
+
+            else:
+                cursor.execute("""
+                    UPDATE appointments 
+                    SET status=%s 
+                    WHERE id=%s
+                """, (status, appt_id))
+
+            db.commit()
+            self.load()
+
+        except Exception as e:
+            db.rollback()
+            messagebox.showerror("Lỗi", str(e))
+        finally:
             db.close()
 
-        inputs = {}
+   # ================= CREATE (FIX RESPONSIVE) =================
+    def open_modal(self):
+        modal = ctk.CTkToplevel(self)
+        modal.title("Tạo Lịch Hẹn Mới")
+        modal.geometry("550x700")
+        modal.attributes("-topmost", True)
+        modal.grab_set()
 
-        # Layout 2 cột cho các thông tin cơ bản
-        row1 = ctk.CTkFrame(container, fg_color="transparent"); row1.pack(fill="x", pady=5)
+        # Cho phép modal co dãn cột chính
+        modal.grid_columnconfigure(0, weight=1)
+        modal.grid_rowconfigure(0, weight=1)
+
+        # Toàn bộ nội dung nằm trong ScrollableFrame để không bị mất nội dung khi màn hình bé
+        main_scroll = ctk.CTkScrollableFrame(modal, fg_color="transparent")
+        main_scroll.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        main_scroll.grid_columnconfigure(0, weight=1)
+
+        # --- PHẦN 1: THÔNG TIN KHÁCH HÀNG ---
+        ctk.CTkLabel(main_scroll, text="THÔNG TIN KHÁCH HÀNG", 
+                     font=("Arial", 15, "bold"), text_color="#2563eb").grid(row=0, column=0, sticky="w", pady=(10, 15))
         
-        # Tên khách
-        c1 = ctk.CTkFrame(row1, fg_color="transparent"); c1.pack(side="left", expand=True, fill="x", padx=(0, 10))
-        ctk.CTkLabel(c1, text="Họ và tên *", text_color="#64748b").pack(anchor="w")
-        inputs['name'] = ctk.CTkEntry(c1, height=40); inputs['name'].pack(fill="x", pady=5)
+        # Helper để tạo các hàng nhập liệu co dãn
+        def create_input_group(parent, label_text, placeholder, row):
+            ctk.CTkLabel(parent, text=label_text, font=("Arial", 12)).grid(row=row, column=0, sticky="w")
+            entry = ctk.CTkEntry(parent, placeholder_text=placeholder, height=35)
+            entry.grid(row=row+1, column=0, sticky="ew", pady=(2, 12))
+            return entry
 
-        # Số điện thoại (Để kiểm tra trùng)
-        c2 = ctk.CTkFrame(row1, fg_color="transparent"); c2.pack(side="left", expand=True, fill="x", padx=(10, 0))
-        ctk.CTkLabel(c2, text="Số điện thoại *", text_color="#64748b").pack(anchor="w")
-        inputs['phone'] = ctk.CTkEntry(c2, height=40); inputs['phone'].pack(fill="x", pady=5)
+        name = create_input_group(main_scroll, "Họ và tên:", "Nhập tên khách hàng", 1)
+        phone = create_input_group(main_scroll, "Số điện thoại:", "VD: 0912345678", 3)
+        plate = create_input_group(main_scroll, "Biển số xe:", "VD: 30A-123.45", 5)
 
-        # Biển số xe
-        ctk.CTkLabel(container, text="Biển số xe *", text_color="#64748b").pack(anchor="w", pady=(10, 0))
-        inputs['plate'] = ctk.CTkEntry(container, height=40, placeholder_text="VD: 30A-123.45"); inputs['plate'].pack(fill="x", pady=5)
-
-        # Chọn dịch vụ có sẵn
-        ctk.CTkLabel(container, text="Dịch vụ yêu cầu *", text_color="#64748b").pack(anchor="w", pady=(10, 0))
-        inputs['service'] = ctk.CTkComboBox(container, height=40, values=service_list); inputs['service'].pack(fill="x", pady=5)
-
-        # Ngày và Giờ
-        row2 = ctk.CTkFrame(container, fg_color="transparent"); row2.pack(fill="x", pady=10)
+        # --- PHẦN 2: CHỌN DỊCH VỤ ---
+        ctk.CTkLabel(main_scroll, text="CHỌN DỊCH VỤ", 
+                     font=("Arial", 15, "bold"), text_color="#2563eb").grid(row=7, column=0, sticky="w", pady=(10, 5))
         
-        c3 = ctk.CTkFrame(row2, fg_color="transparent"); c3.pack(side="left", expand=True, fill="x", padx=(0, 10))
-        ctk.CTkLabel(c3, text="Ngày hẹn (YYYY-MM-DD) *", text_color="#64748b").pack(anchor="w")
-        inputs['date'] = ctk.CTkEntry(c3, height=40); inputs['date'].insert(0, datetime.now().strftime("%Y-%m-%d")); inputs['date'].pack(fill="x", pady=5)
+        svc_frame = ctk.CTkFrame(main_scroll, fg_color="#f8fafc", border_width=1, border_color="#e2e8f0")
+        svc_frame.grid(row=8, column=0, sticky="ew", pady=5)
+        svc_frame.grid_columnconfigure(0, weight=1)
 
-        c4 = ctk.CTkFrame(row2, fg_color="transparent"); c4.pack(side="left", expand=True, fill="x", padx=(10, 0))
-        ctk.CTkLabel(c4, text="Giờ hẹn (HH:MM) *", text_color="#64748b").pack(anchor="w")
-        inputs['time'] = ctk.CTkEntry(c4, height=40); inputs['time'].insert(0, "08:30"); inputs['time'].pack(fill="x", pady=5)
+        svc_scroll = ctk.CTkScrollableFrame(svc_frame, height=150, fg_color="transparent")
+        svc_scroll.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-        # Nút xác nhận
-        btn_save = ctk.CTkButton(modal, text="Tạo lịch hẹn", fg_color="#2563eb", height=45, corner_radius=8,
-                                 font=("Arial", 14, "bold"), command=lambda: self.save_appointment(inputs, modal, service_data))
-        btn_save.pack(pady=30, padx=40, fill="x")
-
-    def save_appointment(self, f, win, service_data):
-        """Xử lý logic trùng khách hàng và lưu dữ liệu"""
-        name, phone, plate = f['name'].get().strip(), f['phone'].get().strip(), f['plate'].get().strip()
-        selected_sv_name = f['service'].get()
-        appt_dt = f['date'].get() + " " + f['time'].get()
-
-        if not (name and phone and plate):
-            messagebox.showwarning("Thiếu dữ liệu", "Vui lòng nhập đầy đủ thông tin!"); return
-
-        # Tìm service_id từ tên dịch vụ đã chọn
-        sv_id = next((s[0] for s in service_data if s[1] == selected_sv_name), None)
-
+        # Lấy dữ liệu dịch vụ
         db = connect_db()
-        if db:
+        cursor = db.cursor()
+        cursor.execute("SELECT id, service_name FROM services")
+        services = cursor.fetchall()
+        db.close()
+
+        svc_vars = {}
+        count_label = ctk.CTkLabel(main_scroll, text="Đã chọn: 0 dịch vụ", font=("Arial", 11, "italic"), text_color="#64748b")
+        count_label.grid(row=9, column=0, sticky="e")
+
+        def update_count(*_):
+            count = sum(v.get() for v in svc_vars.values())
+            count_label.configure(text=f"Đã chọn: {count} dịch vụ")
+
+        for sid, name_svc in services:
+            var = ctk.BooleanVar()
+            var.trace_add("write", update_count)
+            cb = ctk.CTkCheckBox(svc_scroll, text=name_svc, variable=var, font=("Arial", 13))
+            cb.pack(anchor="w", pady=4, padx=10)
+            svc_vars[sid] = var
+
+        # --- PHẦN 3: THỜI GIAN (CHIA CỘT 50/50) ---
+        ctk.CTkLabel(main_scroll, text="THỜI GIAN HẸN", 
+                     font=("Arial", 15, "bold"), text_color="#2563eb").grid(row=10, column=0, sticky="w", pady=(20, 5))
+        
+        time_container = ctk.CTkFrame(main_scroll, fg_color="transparent")
+        time_container.grid(row=11, column=0, sticky="ew")
+        time_container.grid_columnconfigure((0, 1), weight=1)
+
+        # Ngày
+        ctk.CTkLabel(time_container, text="Ngày hẹn:", font=("Arial", 12)).grid(row=0, column=0, sticky="w")
+        date_pick = DateEntry(time_container, date_pattern="yyyy-mm-dd", background='#2563eb', foreground='white')
+        date_pick.grid(row=1, column=0, sticky="ew", padx=(0, 10), pady=2)
+
+        # Giờ
+        ctk.CTkLabel(time_container, text="Giờ hẹn (HH:MM):", font=("Arial", 12)).grid(row=0, column=1, sticky="w")
+        time_ent = ctk.CTkEntry(time_container, placeholder_text="08:30", height=35)
+        time_ent.grid(row=1, column=1, sticky="ew", pady=2)
+
+        # --- NÚT XÁC NHẬN ---
+        def save_action():
+            # (Giữ nguyên logic kiểm tra dữ liệu như cũ)
+            if not name.get() or not phone.get() or not plate.get():
+                messagebox.showerror("Lỗi", "Vui lòng nhập đầy đủ thông tin!"); return
+            
+            selected = [sid for sid, v in svc_vars.items() if v.get()]
+            if not selected:
+                messagebox.showerror("Lỗi", "Vui lòng chọn ít nhất 1 dịch vụ!"); return
+            
             try:
-                cursor = db.cursor()
-                db.start_transaction()
-
-                # 1. Kiểm tra trùng khách hàng dựa trên tên + SĐT
-                cursor.execute("SELECT id FROM customers WHERE full_name = %s AND phone = %s", (name, phone))
-                cus_res = cursor.fetchone()
-
-                if cus_res:
-                    cus_id = cus_res[0]
-                    # Nếu trùng: Tăng số lần tham gia dịch vụ (visit_count)
-                    cursor.execute("UPDATE customers SET visit_count = visit_count + 1 WHERE id = %s", (cus_id,))
-                else:
-                    # Nếu mới: Tạo khách hàng mới
-                    cursor.execute("INSERT INTO customers (full_name, phone, visit_count) VALUES (%s, %s, 1)", (name, phone))
-                    cus_id = cursor.lastrowid
-                cursor.execute("SELECT plate_number FROM cars WHERE plate_number = %s", (plate,))
-                if not cursor.fetchone():
-                    cursor.execute("INSERT INTO cars (plate_number, customer_id) VALUES (%s, %s)", (plate, cus_id))
-
+                dt_obj = datetime.strptime(date_pick.get()+" "+time_ent.get(), "%Y-%m-%d %H:%M")
+                db_conn = connect_db()
+                curr = db_conn.cursor()
                 
-                sql_appt = "INSERT INTO appointments (customer_id, car_plate, service_id, appointment_date, status) VALUES (%s, %s, %s, %s, %s)"
-                cursor.execute(sql_appt, (cus_id, plate, sv_id, appt_dt, "Chờ xác nhận"))
-
-                db.commit()
-                win.destroy()
-                self.load_appointments()
+                # Check khách hàng
+                curr.execute("SELECT id FROM customers WHERE phone=%s", (phone.get(),))
+                res = curr.fetchone()
+                cus_id = res[0] if res else None
+                if not cus_id:
+                    curr.execute("INSERT INTO customers(full_name, phone) VALUES(%s,%s)", (name.get(), phone.get()))
+                    cus_id = curr.lastrowid
                 
+                # Insert lịch hẹn
+                for sid in selected:
+                    curr.execute("""INSERT INTO appointments(customer_id, car_plate, service_id, appointment_date, status) 
+                                    VALUES (%s,%s,%s,%s,'Chờ xác nhận')""", (cus_id, plate.get(), sid, dt_obj))
+                
+                db_conn.commit()
+                db_conn.close()
+                modal.destroy()
+                self.load()
+            except ValueError:
+                messagebox.showerror("Lỗi", "Sai định dạng giờ (HH:MM)!")
             except Exception as e:
-                db.rollback()
-                messagebox.showerror("Lỗi", f"Không thể lưu lịch hẹn: {e}")
-            finally:
-                db.close()
+                messagebox.showerror("Lỗi DB", str(e))
 
-    def delete_appointment(self, appt_id):
-        if messagebox.askyesno("Xác nhận", "Bạn có muốn xóa lịch hẹn này?"):
-            db = connect_db()
-            if db:
-                cursor = db.cursor()
-                cursor.execute("DELETE FROM appointments WHERE id = %s", (appt_id,))
-                db.commit()
-                db.close()
-                self.load_appointments()
+        btn_save = ctk.CTkButton(main_scroll, text="XÁC NHẬN TẠO LỊCH", font=("Arial", 14, "bold"), 
+                                 fg_color="#2563eb", hover_color="#1d4ed8", height=50, command=save_action)
+        btn_save.grid(row=12, column=0, sticky="ew", pady=30)

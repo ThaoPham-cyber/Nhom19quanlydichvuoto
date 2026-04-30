@@ -3,167 +3,158 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 from database import connect_db
 from datetime import datetime, timedelta
-import ctypes
+
+def to_float(v):
+    return float(v) if v else 0.0
 
 class DashboardFrame(ctk.CTkFrame):
-    def __init__(self, parent):
-        super().__init__(parent, fg_color="#f1f5f9")
-        
-        # Tối ưu hiển thị trên màn hình độ phân giải cao
-        try: ctypes.windll.shcore.SetProcessDpiAwareness(1)
-        except: pass
+    def __init__(self, parent, app=None):
+        super().__init__(parent, fg_color="#f1f5f9") # Nền xám nhạt sang trọng
+        self.app = app
 
         self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        # --- HEADER ---
-        self.header = ctk.CTkFrame(self, fg_color="white", height=70, corner_radius=0)
-        self.header.pack(fill="x", pady=(0, 20))
-        ctk.CTkLabel(self.header, text="Tổng quan hệ thống", font=("Arial", 22, "bold")).pack(side="left", padx=30)
-        
-        self.filter_var = ctk.StringVar(value="Tất cả")
-        self.filter_menu = ctk.CTkComboBox(self.header, values=["Tháng này", "Năm nay", "Tất cả"],
-                                          variable=self.filter_var, command=self.update_data)
-        self.filter_menu.pack(side="right", padx=30)
+        # ===== HEADER =====
+        header = ctk.CTkFrame(self, fg_color="white", height=70, corner_radius=0)
+        header.grid(row=0, column=0, sticky="ew")
 
-        # --- STAT CARDS (Thống kê nhanh) ---
-        self.stat_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.stat_frame.pack(fill="x", padx=20)
+        ctk.CTkLabel(
+            header,
+            text="Hệ Thống Dashboard Realtime",
+            font=("Arial", 22, "bold"),
+            text_color="#1e293b"
+        ).pack(side="left", padx=30)
+
+        self.filter_var = ctk.StringVar(value="Năm")
+        ctk.CTkComboBox(
+            header,
+            values=["Ngày", "Tuần", "Tháng", "Năm"],
+            variable=self.filter_var,
+            command=self.update_data,
+            width=140,
+            border_color="#e2e8f0",
+            button_color="#2563eb"
+        ).pack(side="right", padx=30)
+
+        # ===== SCROLLABLE AREA =====
+        self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        self.scroll.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+        self.scroll.grid_columnconfigure(0, weight=1)
+
+        # Khu vực Stats (4 ô trên cùng)
+        self.stat_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
+        self.stat_frame.pack(fill="x", pady=(10, 20))
         self.stat_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
-        # --- CHARTS CONTAINER (Cuộn được nếu màn hình nhỏ) ---
-        self.chart_container = ctk.CTkScrollableFrame(self, fg_color="transparent", height=800)
-        self.chart_container.pack(fill="both", expand=True, padx=20, pady=20)
-        self.chart_container.grid_columnconfigure((0, 1), weight=1)
+        # Khu vực Biểu đồ
+        self.chart_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
+        self.chart_frame.pack(fill="both", expand=True)
+        self.chart_frame.grid_columnconfigure((0, 1), weight=1)
 
+        # ===== START =====
         self.update_data()
+        self.auto_refresh()
 
-    def get_db_stats(self, filter_mode):
+    def auto_refresh(self):
+        self.update_data()
+        self.after(10000, self.auto_refresh) # 10s refresh 1 lần để tránh giật lag
+
+    def get_data(self):
         db = connect_db()
         cursor = db.cursor()
         now = datetime.now()
-        
-        if filter_mode == "Tháng này":
-            time_cond = f"MONTH(appointment_date) = {now.month} AND YEAR(appointment_date) = {now.year}"
-        elif filter_mode == "Năm nay":
-            time_cond = f"YEAR(appointment_date) = {now.year}"
-        else:
-            time_cond = "1=1"
-
-        # Thống kê số lượng
-        cursor.execute("SELECT COUNT(*) FROM customers"); t_cus = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM cars"); t_car = cursor.fetchone()[0]
-        cursor.execute(f"SELECT COUNT(*) FROM appointments WHERE {time_cond}"); apps = cursor.fetchone()[0]
-        
-        cursor.execute(f"SELECT SUM(total_price) FROM appointments WHERE status = 'Hoàn thành' AND {time_cond}")
-        rev_val = cursor.fetchone()[0]
-        rev = float(rev_val) if rev_val else 0.0
-        
-        # Doanh thu 6 tháng gần nhất
-        rev_history = []
-        for i in range(5, -1, -1):
-            month_date = now.replace(day=1) - timedelta(days=i*30)
-            m, y = month_date.month, month_date.year
-            cursor.execute(f"SELECT SUM(total_price) FROM appointments WHERE status = 'Hoàn thành' AND MONTH(appointment_date) = {m} AND YEAR(appointment_date) = {y}")
-            val = cursor.fetchone()[0]
-            rev_history.append((f"T{m}", float(val)/1e6 if val else 0.0))
-
-        # 1. FIX: Top 5 khách hàng (Sử dụng LEFT JOIN để luôn lấy đủ 5 người kể cả khi mới)
-        cursor.execute(f"""
-            SELECT c.full_name, COALESCE(SUM(a.total_price), 0) as total
-            FROM customers c
-            LEFT JOIN appointments a ON c.id = a.customer_id AND a.status = 'Hoàn thành'
-            GROUP BY c.id, c.full_name
-            ORDER BY total DESC, c.full_name ASC
-            LIMIT 5
-        """)
-        top_customers = cursor.fetchall()
-
-        # 2. FIX: Top 5 dịch vụ phổ biến (Sử dụng LEFT JOIN để không bị thiếu mục)
-        cursor.execute(f"""
-            SELECT s.service_name, COUNT(a.id) as usage_count
-            FROM services s
-            LEFT JOIN appointments a ON s.id = a.service_id
-            GROUP BY s.id, s.service_name
-            ORDER BY usage_count DESC, s.service_name ASC
-            LIMIT 5
-        """)
-        svc_data = cursor.fetchall()
-        
-        db.close()
-        return t_cus, t_car, apps, rev, rev_history, svc_data, top_customers
-
-    def format_label(self, text, max_len=12):
-        """Hàm tự động chèn dấu xuống dòng để chữ nằm ngang không bị đè nhau"""
-        if len(text) <= max_len:
-            return text
-        words = text.split()
-        if len(words) > 1:
-            mid = len(words) // 2
-            return " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
-        return text
-
-    def update_data(self, _=None):
         mode = self.filter_var.get()
-        t_cus, t_car, apps, rev, rev_hist, svc_data, top_cust = self.get_db_stats(mode)
-        
-        for w in self.stat_frame.winfo_children(): w.destroy()
-        rev_display = f"{rev/1e6:.1f}tr" if rev >= 1e6 else f"{rev:,.0f}đ"
 
+        if mode == "Ngày": cond = f"DATE(service_date) = '{now.date()}'"
+        elif mode == "Tuần": cond = "YEARWEEK(service_date, 1) = YEARWEEK(NOW(), 1)"
+        elif mode == "Tháng": cond = f"MONTH(service_date) = {now.month} AND YEAR(service_date)={now.year}"
+        else: cond = "1=1"
+
+        # Queries
+        cursor.execute("SELECT COUNT(*) FROM customers")
+        cus = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM cars")
+        cars = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM appointments")
+        apps = cursor.fetchone()[0]
+        cursor.execute(f"SELECT SUM(price) FROM service_history WHERE {cond}")
+        rev = to_float(cursor.fetchone()[0])
+
+        # Revenue Line Chart (7 days)
+        revenue = []
+        for i in range(6, -1, -1):
+            d = now - timedelta(days=i)
+            cursor.execute(f"SELECT SUM(price) FROM service_history WHERE DATE(service_date)='{d.date()}'")
+            revenue.append((d.strftime("%d/%m"), to_float(cursor.fetchone()[0])))
+
+        # Top Khách
+        cursor.execute(f"""
+            SELECT c.full_name, SUM(h.price) FROM customers c
+            JOIN service_history h ON c.id = h.customer_id
+            WHERE {cond} GROUP BY c.id ORDER BY SUM(h.price) DESC LIMIT 5
+        """)
+        top_cus = [(x[0], to_float(x[1])) for x in cursor.fetchall()]
+
+        # Top Dịch Vụ
+        cursor.execute(f"""
+            SELECT service_name, COUNT(*) FROM service_history
+            WHERE {cond} GROUP BY service_name ORDER BY COUNT(*) DESC LIMIT 8
+        """)
+        top_svc = cursor.fetchall()
+
+        db.close()
+        return cus, cars, apps, rev, revenue, top_cus, top_svc
+
+    def update_data(self, *_):
+        cus, cars, apps, rev, revenue, top_cus, top_svc = self.get_data()
+
+        # Clear cũ
+        for w in self.stat_frame.winfo_children(): w.destroy()
+        for w in self.chart_frame.winfo_children(): w.destroy()
+
+        # ===== RENDER STATS (4 ô) =====
         stats = [
-            ("Tổng khách hàng", t_cus, "Hệ thống", "#22c55e"),
-            ("Xe đang quản lý", t_car, "Hệ thống", "#22c55e"),
-            ("Lịch hẹn", apps, mode, "#3b82f6"),
-            ("Doanh thu", rev_display, mode, "#22c55e")
+            ("Tổng khách hàng", cus, "#3b82f6"),
+            ("Xe trong hệ thống", cars, "#8b5cf6"),
+            ("Lịch hẹn", apps, "#f59e0b"),
+            ("Doanh thu kỳ", f"{rev:,.0f}đ", "#10b981")
         ]
 
-        for i, (title, val, sub, color) in enumerate(stats):
-            card = ctk.CTkFrame(self.stat_frame, fg_color="white", corner_radius=15)
+        for i, (t, v, color) in enumerate(stats):
+            card = ctk.CTkFrame(self.stat_frame, fg_color="white", border_width=1, border_color="#e2e8f0", corner_radius=12)
             card.grid(row=0, column=i, padx=10, sticky="nsew")
-            ctk.CTkLabel(card, text=title, font=("Arial", 13), text_color="#64748b").pack(pady=(15, 0))
-            ctk.CTkLabel(card, text=str(val), font=("Arial", 24, "bold")).pack(pady=5)
-            ctk.CTkLabel(card, text=sub, font=("Arial", 11), text_color=color).pack(pady=(0,15))
-
-        self.render_all_charts(rev_hist, svc_data, top_cust)
-
-    def render_all_charts(self, rev_hist, svc_data, top_cust):
-        for w in self.chart_container.winfo_children(): w.destroy()
-
-        # --- BIỂU ĐỒ DOANH THU ---
-        fig1, ax1 = plt.subplots(figsize=(5, 3.5), facecolor='white')
-        months = [x[0] for x in rev_hist]
-        values = [x[1] for x in rev_hist]
-        ax1.plot(months, values, marker='o', color='#3b82f6', linewidth=2)
-        ax1.set_title("Biến động doanh thu (Tr)", fontsize=10, fontweight='bold')
-        ax1.spines[['top', 'right']].set_visible(False)
-        FigureCanvasTkAgg(fig1, self.chart_container).get_tk_widget().grid(row=0, column=0, padx=10, pady=10)
-
-        # --- BIỂU ĐỒ TOP 5 KHÁCH HÀNG ---
-        fig2, ax2 = plt.subplots(figsize=(5, 3.5), facecolor='white')
-        if top_cust:
-            cust_names = [self.format_label(c[0], 12) for c in top_cust]
-            cust_revs = [float(c[1])/1e6 for c in top_cust]
-            ax2.barh(cust_names, cust_revs, color='#10b981')
-            ax2.invert_yaxis()
-        ax2.set_title("Top khách hàng chi tiêu (Tr)", fontsize=10, fontweight='bold')
-        ax2.spines[['top', 'right']].set_visible(False)
-        FigureCanvasTkAgg(fig2, self.chart_container).get_tk_widget().grid(row=0, column=1, padx=10, pady=10)
-
-        # --- BIỂU ĐỒ TOP 5 DỊCH VỤ (Rộng ngang màn hình) ---
-        fig3, ax3 = plt.subplots(figsize=(10, 4.5), facecolor='white')
-        if svc_data:
-            svc_names = [self.format_label(s[0], 10) for s in svc_data]
-            svc_counts = [s[1] for s in svc_data]
-            bars = ax3.bar(svc_names, svc_counts, color='#6366f1', width=0.4)
             
-            # Label số lượng trên cột
-            for bar in bars:
-                height = bar.get_height()
-                ax3.text(bar.get_x() + bar.get_width()/2., height, 
-                        f'{int(height)}', ha='center', va='bottom', fontsize=9)
-        
-        ax3.set_title("Top 5 dịch vụ phổ biến (Lượt dùng)", fontsize=11, fontweight='bold')
-        ax3.set_ylim(0, max([s[1] for s in svc_data] + [1]) * 1.3) # Tạo khoảng trống cho số hiện trên đầu cột
-        ax3.spines[['top', 'right']].set_visible(False)
-        
-        plt.tight_layout()
-        FigureCanvasTkAgg(fig3, self.chart_container).get_tk_widget().grid(row=1, column=0, columnspan=2, pady=20)
+            ctk.CTkLabel(card, text=t, font=("Arial", 13), text_color="#64748b").pack(pady=(15, 0))
+            ctk.CTkLabel(card, text=v, font=("Arial", 22, "bold"), text_color=color).pack(pady=(5, 15))
+
+        # ===== RENDER CHARTS =====
+        # Chart 1: Doanh thu (Line)
+        fig1, ax1 = plt.subplots(figsize=(5, 3.5), tight_layout=True)
+        ax1.plot([x[0] for x in revenue], [x[1]/1e6 for x in revenue], marker="o", color="#3b82f6", linewidth=2)
+        ax1.set_title("Xu hướng doanh thu (Triệu VNĐ)", fontsize=10, fontweight='bold')
+        ax1.grid(axis='y', linestyle='--', alpha=0.6)
+        self.draw(fig1, 0, 0)
+
+        # Chart 2: Top Khách (Bar dọc)
+        fig2, ax2 = plt.subplots(figsize=(5, 3.5), tight_layout=True)
+        if top_cus:
+            ax2.bar([x[0] for x in top_cus], [x[1]/1e6 for x in top_cus], color="#8b5cf6")
+        ax2.set_title("Top 5 Khách hàng (Triệu VNĐ)", fontsize=10, fontweight='bold')
+        plt.setp(ax2.get_xticklabels(), rotation=15, ha="right")
+        self.draw(fig2, 0, 1)
+
+        # Chart 3: Top Dịch vụ (Full chiều ngang)
+        fig3, ax3 = plt.subplots(figsize=(10, 3.5), tight_layout=True)
+        if top_svc:
+            ax3.bar([x[0] for x in top_svc], [x[1] for x in top_svc], color="#10b981")
+        ax3.set_title("Phân tích dịch vụ (Số lượt)", fontsize=10, fontweight='bold')
+        self.draw(fig3, 1, 0, colspan=2)
+
+    def draw(self, fig, r, c, colspan=1):
+        canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
+        canvas.draw()
+        widget = canvas.get_tk_widget()
+        # Đặt nền trắng cho biểu đồ để tiệp màu với UI
+        widget.configure(background='white')
+        widget.grid(row=r, column=c, columnspan=colspan, padx=10, pady=10, sticky="nsew")
