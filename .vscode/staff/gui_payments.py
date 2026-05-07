@@ -6,246 +6,6 @@ import os
 from PIL import Image
 
 
-class GroupedProductSelectionWindow(ctk.CTkToplevel):
-    """Cửa sổ chọn và nhập số lượng vật tư gộp từ nhiều hóa đơn"""
-    def __init__(self, parent, grouped_products, callback, total_service_amount, paid_amount, total_amount_label, payment_amount_label):
-        super().__init__(parent)
-        self.parent = parent
-        self.grouped_products = grouped_products
-        self.callback = callback
-        self.total_service_amount = total_service_amount
-        self.paid_amount = paid_amount
-        self.total_amount_label = total_amount_label
-        self.payment_amount_label = payment_amount_label
-        self.selected_products = []
-
-        self.title("Chọn vật tư đã sử dụng (gộp)")
-        self.geometry("700x550")
-        self.attributes("-topmost", True)
-        self.grab_set()
-        self.configure(fg_color="white")
-
-        ctk.CTkLabel(self, text="NHẬP VẬT TƯ ĐÃ SỬ DỤNG (GỘP)", font=("Arial", 20, "bold"),
-                    text_color="#1e293b").pack(pady=20)
-
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20, pady=15)
-        ctk.CTkLabel(main_frame, text="📦 VẬT TƯ CẦN CHO DỊCH VỤ", font=("Arial", 14, "bold"),
-                    text_color="#2563eb").pack(anchor="w", pady=(0, 10))
-
-        self.products_frame = ctk.CTkScrollableFrame(main_frame, fg_color="#f8fafc", corner_radius=10)
-        self.products_frame.pack(fill="both", expand=True)
-
-        self.entries = {}
-        for prod in grouped_products:
-            card = ctk.CTkFrame(self.products_frame, fg_color="white", corner_radius=10,
-                               border_width=1, border_color="#e2e8f0")
-            card.pack(fill="x", pady=5, padx=5)
-
-            name_frame = ctk.CTkFrame(card, fg_color="transparent")
-            name_frame.pack(side="left", fill="x", expand=True, padx=15, pady=10)
-            ctk.CTkLabel(name_frame, text=prod['name'], font=("Arial", 14, "bold"),
-                        text_color="#1e293b").pack(anchor="w")
-            info_text = f"Cần: {prod['total_needed']} {prod['unit']} | Tồn kho: {prod['stock']} {prod['unit']}"
-            stock_color = "#ef4444" if prod['stock'] < prod['total_needed'] else "#64748b"
-            ctk.CTkLabel(name_frame, text=info_text, font=("Arial", 11), text_color=stock_color).pack(anchor="w")
-            ctk.CTkLabel(name_frame, text=f"Giá: {int(prod['price']):,} ₫/{prod['unit']}", font=("Arial", 11),
-                        text_color="#10b981").pack(anchor="w")
-
-            right_frame = ctk.CTkFrame(card, fg_color="transparent")
-            right_frame.pack(side="right", padx=15, pady=10)
-            ctk.CTkLabel(right_frame, text="Số lượng sử dụng:", font=("Arial", 12)).pack(side="left", padx=5)
-            entry = ctk.CTkEntry(right_frame, width=80, justify="center")
-            entry.insert(0, str(prod['total_needed']))
-            entry.pack(side="left", padx=5)
-
-            def validate(e, pid=prod['id'], max_q=prod['stock'], need=prod['total_needed']):
-                try:
-                    val = int(e.get())
-                    if val < 0:
-                        e.delete(0, "end")
-                        e.insert(0, "0")
-                    elif val > max_q:
-                        e.delete(0, "end")
-                        e.insert(0, str(max_q))
-                        messagebox.showwarning("Cảnh báo", f"Tồn kho không đủ! Chỉ còn {max_q} {prod['unit']}")
-                except:
-                    e.delete(0, "end")
-                    e.insert(0, str(need))
-            entry.bind("<KeyRelease>", validate)
-
-            self.entries[prod['id']] = {
-                'entry': entry,
-                'data': prod
-            }
-
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=20)
-        ctk.CTkButton(btn_frame, text="Hủy", fg_color="transparent", text_color="#64748b",
-                     height=40, command=self.destroy).pack(side="left", fill="x", expand=True, padx=5)
-        ctk.CTkButton(btn_frame, text="✅ Xác nhận sử dụng", fg_color="#10b981", hover_color="#059669",
-                     height=40, command=self.confirm).pack(side="right", fill="x", expand=True, padx=5)
-
-    def confirm(self):
-        self.selected_products = []
-        total_product_cost = 0
-        for pid, ent in self.entries.items():
-            try:
-                qty = int(ent['entry'].get())
-                if qty > 0:
-                    prod = ent['data']
-                    self.selected_products.append({
-                        'id': pid,
-                        'name': prod['name'],
-                        'quantity': qty,
-                        'price': prod['price'],
-                        'unit': prod['unit'],
-                        'invoices_needs': prod.get('invoices_needs', {})
-                    })
-                    total_product_cost += qty * prod['price']
-            except:
-                pass
-        self.destroy()
-        if self.callback:
-            self.callback(self.selected_products, total_product_cost)
-
-
-class ProductSelectionWindow(ctk.CTkToplevel):
-    """Cửa sổ chọn và nhập số lượng vật tư đã sử dụng (cho 1 hóa đơn)"""
-    def __init__(self, parent, service_id, service_name, invoice_id, callback, initial_products=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.service_id = service_id
-        self.service_name = service_name
-        self.invoice_id = invoice_id
-        self.callback = callback
-        self.selected_products = []
-        self.initial_products = {prod['id']: prod for prod in (initial_products or [])}
-
-        self.title(f"Chọn vật tư đã sử dụng - {service_name}")
-        self.geometry("700x550")
-        self.attributes("-topmost", True)
-        self.grab_set()
-        self.configure(fg_color="white")
-
-        ctk.CTkLabel(self, text=f"NHẬP VẬT TƯ ĐÃ SỬ DỤNG", font=("Arial", 20, "bold"),
-                    text_color="#1e293b").pack(pady=20)
-        ctk.CTkLabel(self, text=f"Dịch vụ: {service_name}", font=("Arial", 14),
-                    text_color="#64748b").pack()
-
-        main_frame = ctk.CTkFrame(self, fg_color="transparent")
-        main_frame.pack(fill="both", expand=True, padx=20, pady=15)
-        ctk.CTkLabel(main_frame, text="📦 VẬT TƯ CẦN CHO DỊCH VỤ", font=("Arial", 14, "bold"),
-                    text_color="#2563eb").pack(anchor="w", pady=(0, 10))
-
-        self.products_frame = ctk.CTkScrollableFrame(main_frame, fg_color="#f8fafc", corner_radius=10)
-        self.products_frame.pack(fill="both", expand=True)
-
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=20)
-        ctk.CTkButton(btn_frame, text="Hủy", fg_color="transparent", text_color="#64748b",
-                     height=40, command=self.destroy).pack(side="left", fill="x", expand=True, padx=5)
-        ctk.CTkButton(btn_frame, text="✅ Xác nhận sử dụng", fg_color="#10b981", hover_color="#059669",
-                     height=40, command=self.confirm_products).pack(side="right", fill="x", expand=True, padx=5)
-
-        self.load_required_products()
-
-    def load_required_products(self):
-        for w in self.products_frame.winfo_children():
-            w.destroy()
-        db = connect_db()
-        if not db:
-            ctk.CTkLabel(self.products_frame, text="Lỗi kết nối database!",
-                        font=("Arial", 12), text_color="#ef4444").pack(pady=20)
-            return
-
-        cursor = db.cursor()
-        cursor.execute("""
-            SELECT p.id, p.product_name, sp.quantity_needed, p.stock_quantity, p.price, p.unit
-            FROM service_products sp
-            JOIN inventory p ON sp.product_id = p.id
-            WHERE sp.service_id = %s
-        """, (self.service_id,))
-        products = cursor.fetchall()
-        cursor.close()
-        db.close()
-
-        if not products:
-            ctk.CTkLabel(self.products_frame, text="Dịch vụ này không yêu cầu vật tư nào.\nBạn có thể tiếp tục thanh toán.",
-                        font=("Arial", 12), text_color="#64748b").pack(pady=20)
-            return
-
-        self.product_entries = {}
-        for prod in products:
-            prod_id, prod_name, needed, stock, price, unit = prod
-            needed = int(needed) if needed is not None else 0
-            stock = int(stock) if stock is not None else 0
-            price = float(price) if price is not None else 0.0
-
-            card = ctk.CTkFrame(self.products_frame, fg_color="white", corner_radius=10,
-                               border_width=1, border_color="#e2e8f0")
-            card.pack(fill="x", pady=5, padx=5)
-
-            name_frame = ctk.CTkFrame(card, fg_color="transparent")
-            name_frame.pack(side="left", fill="x", expand=True, padx=15, pady=10)
-            ctk.CTkLabel(name_frame, text=prod_name, font=("Arial", 14, "bold"),
-                        text_color="#1e293b").pack(anchor="w")
-            info_text = f"Cần: {needed} {unit} | Tồn kho: {stock} {unit}"
-            stock_color = "#ef4444" if stock < needed else "#64748b"
-            ctk.CTkLabel(name_frame, text=info_text, font=("Arial", 11), text_color=stock_color).pack(anchor="w")
-            ctk.CTkLabel(name_frame, text=f"Giá: {int(price):,} ₫/{unit}", font=("Arial", 11),
-                        text_color="#10b981").pack(anchor="w")
-
-            right_frame = ctk.CTkFrame(card, fg_color="transparent")
-            right_frame.pack(side="right", padx=15, pady=10)
-            ctk.CTkLabel(right_frame, text="Số lượng sử dụng:", font=("Arial", 12)).pack(side="left", padx=5)
-            entry = ctk.CTkEntry(right_frame, width=80, justify="center")
-            current_quantity = self.initial_products.get(prod_id, {}).get('quantity', needed)
-            entry.insert(0, str(current_quantity))
-            entry.pack(side="left", padx=5)
-
-            def validate_quantity(e, pid=prod_id, max_q=stock, need=needed, u=unit):
-                try:
-                    val = int(e.get())
-                    if val > max_q:
-                        e.delete(0, "end")
-                        e.insert(0, str(max_q))
-                        messagebox.showwarning("Cảnh báo", f"Tồn kho không đủ! Chỉ còn {max_q} {u}")
-                    elif val < 0:
-                        e.delete(0, "end")
-                        e.insert(0, "0")
-                except:
-                    e.delete(0, "end")
-                    e.insert(0, str(need))
-            entry.bind("<KeyRelease>", lambda e, ent=entry, pid=prod_id: validate_quantity(e, pid=pid))
-
-            self.product_entries[prod_id] = {
-                "entry": entry,
-                "name": prod_name,
-                "price": price,
-                "unit": unit,
-                "stock": stock,
-                "needed": needed
-            }
-
-    def confirm_products(self):
-        self.selected_products = []
-        for prod_id, data in self.product_entries.items():
-            try:
-                quantity = int(data["entry"].get())
-                if quantity > 0:
-                    self.selected_products.append({
-                        "id": prod_id,
-                        "name": data["name"],
-                        "quantity": quantity,
-                        "price": data["price"],
-                        "unit": data["unit"]
-                    })
-            except:
-                pass
-        self.destroy()
-        if self.callback:
-            self.callback(self.selected_products)
 
 
 class PaymentFrame(ctk.CTkFrame):
@@ -625,74 +385,6 @@ class PaymentFrame(ctk.CTkFrame):
         print(f"❌ Không tìm thấy QR tại: {path}")
         return None
 
-    def get_grouped_products_for_invoices(self, invoice_ids):
-        """Lấy danh sách vật tư cần cho nhiều hóa đơn, gộp các sản phẩm trùng nhau."""
-        db = connect_db()
-        if not db:
-            return []
-        cursor = db.cursor()
-        # Lấy nhu cầu vật tư theo từng invoice dựa trên service_id
-        invoice_needs = {}
-        for inv_id in invoice_ids:
-            cursor.execute("""
-                SELECT ii.service_id
-                FROM invoice_items ii
-                WHERE ii.invoice_id = %s
-            """, (inv_id,))
-            svc_ids = [row[0] for row in cursor.fetchall()]
-            needs = {}
-            for svc_id in svc_ids:
-                cursor.execute("SELECT require_inventory FROM services WHERE id = %s", (svc_id,))
-                req = cursor.fetchone()
-                if req and req[0] == 1:
-                    cursor.execute("""
-                        SELECT p.id, sp.quantity_needed
-                        FROM service_products sp
-                        JOIN inventory p ON sp.product_id = p.id
-                        WHERE sp.service_id = %s
-                    """, (svc_id,))
-                    for pid, qty in cursor.fetchall():
-                        qty = int(qty) if qty else 0
-                        needs[pid] = needs.get(pid, 0) + qty
-            invoice_needs[inv_id] = needs
-
-        # Tập hợp tất cả product ids
-        all_pids = set()
-        for needs in invoice_needs.values():
-            all_pids.update(needs.keys())
-        if not all_pids:
-            db.close()
-            return []
-
-        # Lấy thông tin chi tiết sản phẩm
-        placeholders = ','.join(['%s'] * len(all_pids))
-        cursor.execute(f"""
-            SELECT id, product_name, unit, price, stock_quantity
-            FROM inventory
-            WHERE id IN ({placeholders})
-        """, tuple(all_pids))
-        products_info = {row[0]: {'name': row[1], 'unit': row[2], 'price': float(row[3]), 'stock': int(row[4])} for row in cursor.fetchall()}
-        db.close()
-
-        grouped = []
-        for pid in all_pids:
-            info = products_info[pid]
-            total_needed = sum(invoice_needs[inv_id].get(pid, 0) for inv_id in invoice_ids)
-            if total_needed == 0:
-                continue
-            grouped.append({
-                'id': pid,
-                'name': info['name'],
-                'unit': info['unit'],
-                'price': info['price'],
-                'stock': info['stock'],
-                'total_needed': total_needed,
-                'invoices_needs': {inv_id: invoice_needs[inv_id].get(pid, 0) for inv_id in invoice_ids}
-            })
-        return grouped
-
-    def open_product_selection(self, service_id, service_name, invoice_id, callback, initial_products=None):
-        ProductSelectionWindow(self, service_id, service_name, invoice_id, callback, initial_products=initial_products)
 
     def show_qr_confirmation_dialog(self, invoice_display, payment_method, default_amount, payment_note, callback):
         """Dialog hiển thị QR code và thông tin thanh toán"""
@@ -808,7 +500,7 @@ class PaymentFrame(ctk.CTkFrame):
             header_text = "Thanh toán hóa đơn"
 
         ctk.CTkLabel(modal, text=header_text, font=("Arial", 22, "bold"), text_color="#1e293b").pack(pady=(30, 20))
-        form_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        form_frame = ctk.CTkScrollableFrame(modal, fg_color="transparent")
         form_frame.pack(fill="both", expand=True, padx=40)
 
         # Thông tin hóa đơn
@@ -835,65 +527,72 @@ class PaymentFrame(ctk.CTkFrame):
             elif label == "Số tiền cần TT":
                 payment_label = lbl
 
-        selected_products = []
-        product_summary_label = None
-
-        # Xử lý vật tư gộp khi có nhiều hóa đơn
-        if len(invoice_id_list) > 1:
-            grouped_products = self.get_grouped_products_for_invoices(invoice_id_list)
-            if grouped_products:
-                product_frame = ctk.CTkFrame(form_frame, fg_color="#fff7ed", corner_radius=12,
-                                            border_width=1, border_color="#f97316")
-                product_frame.pack(fill="x", pady=10)
-                ctk.CTkLabel(product_frame, text="📦 VẬT TƯ TIÊU HAO (GỘP)", font=("Arial", 13, "bold"),
-                            text_color="#f97316").pack(anchor="w", padx=15, pady=(10, 5))
-                product_summary_label = ctk.CTkLabel(product_frame, text="⚠️ Chưa chọn vật tư cho các hóa đơn.",
-                                                     font=("Arial", 12), text_color="#f97316")
-                product_summary_label.pack(anchor="w", padx=15, pady=(0, 10))
-                def select_grouped():
-                    self.open_grouped_product_selection(
-                        grouped_products, product_summary_label, selected_products,
-                        total_label, payment_label, total_amount, paid_amount
-                    )
-                ctk.CTkButton(product_frame, text="📝 Chọn vật tư đã sử dụng (gộp)", 
-                            fg_color="#f97316", hover_color="#ea580c", height=35,
-                            command=select_grouped).pack(anchor="w", padx=15, pady=5)
-        else:
-            # Một hóa đơn, xử lý như cũ
-            invoice_id = invoice_id_list[0]
-            db = connect_db()
-            require_product_service = None
-            require_product_name = None
-            if db:
-                cursor = db.cursor()
-                cursor.execute("SELECT ii.service_id, ii.service_name FROM invoice_items ii WHERE ii.invoice_id = %s", (invoice_id,))
-                rows = cursor.fetchall()
-                for svc_id, svc_name in rows:
-                    cursor.execute("SELECT require_inventory FROM services WHERE id = %s", (svc_id,))
-                    res = cursor.fetchone()
-                    if res and res[0] == 1:
-                        require_product_service = svc_id
-                        require_product_name = svc_name
-                        break
-                cursor.close()
-                db.close()
-            if require_product_service:
-                product_frame = ctk.CTkFrame(form_frame, fg_color="#fff7ed", corner_radius=12,
-                                            border_width=1, border_color="#f97316")
-                product_frame.pack(fill="x", pady=10)
-                ctk.CTkLabel(product_frame, text="📦 VẬT TƯ TIÊU HAO", font=("Arial", 13, "bold"),
-                            text_color="#f97316").pack(anchor="w", padx=15, pady=(10, 5))
-                product_summary_label = ctk.CTkLabel(product_frame, text="⚠️ Dịch vụ yêu cầu nhập vật tư đã sử dụng",
-                                                     font=("Arial", 12), text_color="#f97316")
-                product_summary_label.pack(anchor="w", padx=15, pady=(0, 10))
-                select_btn = ctk.CTkButton(product_frame, text="📝 Chọn vật tư đã sử dụng",
-                                          fg_color="#f97316", hover_color="#ea580c", height=35,
-                                          command=lambda: self.open_product_selection(
-                                              require_product_service, require_product_name, invoice_id,
-                                              lambda prods: self.update_selected_products(prods, product_summary_label, None, selected_products, invoice_id,
-                                                                                          payment_label, total_label, total_amount, paid_amount)
-                                          ))
-                select_btn.pack(anchor="w", padx=15, pady=5)
+        # Hiển thị bảng dịch vụ sử dụng thay vì chỉnh sửa vật tư
+        invoice_id = invoice_id_list[0] if len(invoice_id_list) == 1 else None
+        
+        db = connect_db()
+        if db:
+            cursor = db.cursor()
+            
+            # Lấy danh sách dịch vụ từ invoice_items
+            services_list = []
+            if len(invoice_id_list) == 1:
+                cursor.execute("""
+                    SELECT ii.service_id, ii.service_name, ii.price
+                    FROM invoice_items ii
+                    WHERE ii.invoice_id = %s
+                """, (invoice_id,))
+                services_list = cursor.fetchall()
+            else:
+                # Gộp dịch vụ từ nhiều hóa đơn
+                placeholders = ','.join(['%s'] * len(invoice_id_list))
+                cursor.execute(f"""
+                    SELECT DISTINCT ii.service_id, ii.service_name, ii.price
+                    FROM invoice_items ii
+                    WHERE ii.invoice_id IN ({placeholders})
+                """, tuple(invoice_id_list))
+                services_list = cursor.fetchall()
+            
+            cursor.close()
+            db.close()
+            
+            if services_list:
+                service_frame = ctk.CTkFrame(form_frame, fg_color="#e6f3ff", corner_radius=12,
+                                            border_width=1, border_color="#3b82f6")
+                service_frame.pack(fill="x", pady=10)
+                ctk.CTkLabel(service_frame, text="💼 DỊCH VỤ SỬ DỤNG", font=("Arial", 13, "bold"),
+                            text_color="#3b82f6").pack(anchor="w", padx=15, pady=(10, 5))
+                
+                # Bảng dịch vụ với scrollbar
+                table_container = ctk.CTkFrame(service_frame, fg_color="white", corner_radius=8)
+                table_container.pack(fill="x", padx=15, pady=(0, 10), ipady=0)
+                
+                # Header (fixed)
+                header_frame = ctk.CTkFrame(table_container, fg_color="#f1f5f9", height=35)
+                header_frame.pack(fill="x", padx=1, pady=1)
+                header_frame.pack_propagate(False)
+                ctk.CTkLabel(header_frame, text="Tên dịch vụ", font=("Arial", 11, "bold"),
+                            text_color="#64748b").pack(side="left", padx=15, pady=8)
+                ctk.CTkLabel(header_frame, text="Giá", font=("Arial", 11, "bold"),
+                            text_color="#64748b").pack(side="right", padx=15, pady=8)
+                
+                # Scrollable data area
+                scroll_services = ctk.CTkScrollableFrame(table_container, fg_color="white", corner_radius=0)
+                scroll_services.pack(fill="x", padx=1, pady=0)
+                
+                # Data rows
+                for service_id, service_name, price in services_list:
+                    row_frame = ctk.CTkFrame(scroll_services, fg_color="white", height=35)
+                    row_frame.pack(fill="x", padx=0, pady=0)
+                    row_frame.pack_propagate(False)
+                    
+                    ctk.CTkLabel(row_frame, text=service_name or "Không xác định", 
+                                font=("Arial", 11)).pack(side="left", padx=15, pady=8, anchor="w")
+                    ctk.CTkLabel(row_frame, text=f"{int(price):,} ₫", font=("Arial", 11),
+                                text_color="#10b981").pack(side="right", padx=15, pady=8)
+                    
+                    # Separator
+                    ctk.CTkFrame(scroll_services, height=1, fg_color="#e2e8f0").pack(fill="x")
 
         ctk.CTkFrame(modal, height=1, fg_color="#e2e8f0").pack(fill="x", padx=40, pady=10)
 
@@ -928,8 +627,7 @@ class PaymentFrame(ctk.CTkFrame):
                     'invoice_id': temp_id,
                     'total_amount': total_amount,
                     'paid_amount': paid_amount,
-                    'default_amount': default_amount,
-                    'selected_products': selected_products
+                    'default_amount': default_amount
                 }
                 modal.destroy()
                 self.show_qr_confirmation_dialog(
@@ -938,49 +636,11 @@ class PaymentFrame(ctk.CTkFrame):
                 )
             else:
                 self.process_payment(temp_id, total_amount, paid_amount,
-                                     default_amount, modal, selected_products, payment_method, payment_note)
+                                     default_amount, modal, payment_method, payment_note)
 
         ctk.CTkButton(btn_frame, text="✅ Xác nhận thanh toán", fg_color="#10b981", hover_color="#059669",
                      height=45, command=handle_payment).pack(side="right", fill="x", expand=True, padx=5)
 
-    def open_grouped_product_selection(self, grouped_products, status_label, selected_products,
-                                       total_amount_label, payment_amount_label, total_service_amount, paid_amount):
-        """Mở cửa sổ chọn vật tư gộp"""
-        def callback(prods, total_product_cost):
-            # Cập nhật selected_products
-            selected_products.clear()
-            selected_products.extend(prods)
-            # Cập nhật tổng tiền
-            new_total = total_service_amount + total_product_cost
-            total_amount_label.configure(text=f"{int(new_total):,} ₫")
-            # Số tiền cần thanh toán = new_total - paid_amount
-            new_payment = new_total - paid_amount
-            payment_amount_label.configure(text=f"{int(new_payment):,} ₫")
-            status_label.configure(text=f"✅ Đã chọn {len(prods)} loại vật tư (tổng {int(total_product_cost):,}₫)", text_color="#10b981")
-
-        GroupedProductSelectionWindow(self, grouped_products, callback, total_service_amount, paid_amount,
-                                      total_amount_label, payment_amount_label)
-
-    def update_selected_products(self, products, status_label, select_btn, selected_products, invoice_id,
-                                 payment_label, total_label, total_service_amount, paid_amount):
-        # Lưu ý: products là list các dict (id, name, quantity, price, unit)
-        # Tính lại tổng tiền vật tư
-        old_products = [p for p in selected_products if p.get('invoice_id') == invoice_id]
-        old_cost = sum(p["quantity"] * p["price"] for p in old_products)
-        # Loại bỏ các sản phẩm cũ của invoice này
-        selected_products[:] = [p for p in selected_products if p.get('invoice_id') != invoice_id]
-        for p in products:
-            p['invoice_id'] = invoice_id
-            selected_products.append(p)
-        new_cost = sum(p["quantity"] * p["price"] for p in products)
-        cost_diff = new_cost - old_cost
-        new_total = total_service_amount + cost_diff
-        total_label.configure(text=f"{int(new_total):,} ₫")
-        new_payment = new_total - paid_amount
-        payment_label.configure(text=f"{int(new_payment):,} ₫")
-        status_label.configure(text=f"✅ Đã chọn {len(products)} vật tư (tổng {int(new_cost):,}₫)", text_color="#10b981")
-        if select_btn:
-            select_btn.configure(fg_color="#10b981", text="🔄 Thay đổi vật tư")
 
     def process_payment_from_qr(self):
         if hasattr(self, 'temp_payment_info'):
@@ -991,13 +651,12 @@ class PaymentFrame(ctk.CTkFrame):
                 info['paid_amount'],
                 info['default_amount'],
                 None,
-                info['selected_products'],
                 info['method'],
                 info['note']
             )
             del self.temp_payment_info
 
-    def process_payment(self, invoice_id, total_amount, paid_amount, payment_amount, modal, selected_products, payment_method=None, note=None):
+    def process_payment(self, invoice_id, total_amount, paid_amount, payment_amount, modal, payment_method=None, note=None):
         if payment_method is None:
             payment_method = self.payment_method.get()
         if note is None:
@@ -1014,64 +673,6 @@ class PaymentFrame(ctk.CTkFrame):
         cursor = db.cursor()
         try:
             invoice_ids = invoice_id if isinstance(invoice_id, list) else [invoice_id]
-            total_product_cost = 0
-
-            # Xử lý vật tư
-            for prod in selected_products:
-                # Nếu có 'invoices_needs' (từ gộp) thì phân bổ
-                if 'invoices_needs' in prod:
-                    needs = prod['invoices_needs']
-                    total_needed = sum(needs.values())
-                    if total_needed == 0:
-                        continue
-                    remaining_qty = prod['quantity']
-                    # Phân bổ tỷ lệ theo nhu cầu
-                    for inv_id, need in needs.items():
-                        if remaining_qty <= 0:
-                            break
-                        if need == 0:
-                            continue
-                        assign = int(need / total_needed * prod['quantity'])
-                        if assign > remaining_qty:
-                            assign = remaining_qty
-                        if assign > 0:
-                            cursor.execute("SELECT id FROM invoice_products WHERE invoice_id = %s AND product_id = %s", (inv_id, prod['id']))
-                            existing = cursor.fetchone()
-                            if existing:
-                                cursor.execute("UPDATE invoice_products SET quantity = quantity + %s WHERE invoice_id = %s AND product_id = %s",
-                                               (assign, inv_id, prod['id']))
-                            else:
-                                cursor.execute("INSERT INTO invoice_products (invoice_id, product_id, product_name, quantity, price) VALUES (%s, %s, %s, %s, %s)",
-                                               (inv_id, prod['id'], prod['name'], assign, prod['price']))
-                            remaining_qty -= assign
-                    if remaining_qty > 0 and needs:
-                        first_inv = list(needs.keys())[0]
-                        cursor.execute("UPDATE invoice_products SET quantity = quantity + %s WHERE invoice_id = %s AND product_id = %s",
-                                       (remaining_qty, first_inv, prod['id']))
-                    # Trừ kho tổng
-                    cursor.execute("UPDATE inventory SET stock_quantity = stock_quantity - %s WHERE id = %s AND stock_quantity >= %s",
-                                   (prod['quantity'], prod['id'], prod['quantity']))
-                    if cursor.rowcount == 0:
-                        raise Exception(f"Không đủ tồn kho cho {prod['name']}!")
-                    total_product_cost += prod['quantity'] * prod['price']
-                else:
-                    # Sản phẩm của một invoice
-                    inv_id = prod.get('invoice_id', invoice_ids[0] if len(invoice_ids) == 1 else None)
-                    if inv_id is None:
-                        raise Exception("Không thể xác định hóa đơn cho vật tư.")
-                    cursor.execute("SELECT id FROM invoice_products WHERE invoice_id = %s AND product_id = %s", (inv_id, prod['id']))
-                    existing = cursor.fetchone()
-                    if existing:
-                        cursor.execute("UPDATE invoice_products SET quantity = %s, price = %s WHERE invoice_id = %s AND product_id = %s",
-                                       (prod['quantity'], prod['price'], inv_id, prod['id']))
-                    else:
-                        cursor.execute("INSERT INTO invoice_products (invoice_id, product_id, product_name, quantity, price) VALUES (%s, %s, %s, %s, %s)",
-                                       (inv_id, prod['id'], prod['name'], prod['quantity'], prod['price']))
-                    cursor.execute("UPDATE inventory SET stock_quantity = stock_quantity - %s WHERE id = %s AND stock_quantity >= %s",
-                                   (prod['quantity'], prod['id'], prod['quantity']))
-                    if cursor.rowcount == 0:
-                        raise Exception(f"Không đủ tồn kho cho {prod['name']}!")
-                    total_product_cost += prod['quantity'] * prod['price']
 
             cursor.execute("SHOW COLUMNS FROM payments LIKE 'note'")
             has_note = cursor.fetchone() is not None
@@ -1110,8 +711,6 @@ class PaymentFrame(ctk.CTkFrame):
             paid_amount += float(payment_amount) - remaining_amount
             remaining_new = total_amount - paid_amount
             msg = f"✅ Đã thanh toán {int(payment_amount - remaining_amount):,} ₫ thành công!\n"
-            if selected_products and len(invoice_ids) == 1:
-                msg += f"📦 Đã trừ kho {len(selected_products)} loại vật tư (trị giá {int(total_product_cost):,} ₫)\n"
             if remaining_new <= 0:
                 msg += "🎉 Đã thanh toán hoàn tất tất cả hóa đơn!"
             else:
