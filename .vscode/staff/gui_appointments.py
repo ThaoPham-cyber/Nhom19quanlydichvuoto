@@ -7,7 +7,7 @@ from database import connect_db
 
 
 class ServiceSelectionWindow(ctk.CTkToplevel):
-    """Cửa sổ chọn dịch vụ sử dụng khi hoàn thành lịch hẹn (hỗ trợ nhiều dịch vụ)"""
+    """Cửa sổ xác nhận dịch vụ sử dụng (hỗ trợ nhiều dịch vụ)"""
     def __init__(self, parent, appointment_id, callback):
         super().__init__(parent)
         self.appointment_id = appointment_id
@@ -393,6 +393,23 @@ class AppointmentFrame(ctk.CTkFrame):
                         INSERT INTO invoice_items (invoice_id, service_id, service_name, price, quantity)
                         VALUES (%s, %s, %s, %s, 1)
                     """, (inv_id, sid, sname, sprice))
+                # Bổ sung: copy vật tư từ appointment_materials sang invoice_products
+                cursor.execute("""
+                    SELECT am.product_id, p.product_name, SUM(am.quantity_used) as total_qty, p.unit, p.price
+                    FROM appointment_materials am
+                    LEFT JOIN inventory p ON am.product_id = p.id
+                    WHERE am.appointment_id = %s
+                    GROUP BY am.product_id, p.product_name, p.unit, p.price
+                """, (appt_id,))
+                materials = cursor.fetchall()
+                for mat in materials:
+                    if mat[0] is not None:
+                        qty = float(mat[2]) if mat[2] is not None else 0
+                        price = float(mat[4]) if mat[4] is not None else 0
+                        cursor.execute("""
+                            INSERT INTO invoice_products (invoice_id, product_id, product_name, quantity, price)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (inv_id, mat[0], mat[1], qty, price))
                 cursor.execute("UPDATE appointments SET status='Đã bàn giao' WHERE id=%s", (appt_id,))
                 db.commit()
                 messagebox.showinfo("Thành công", f"Đã tạo hóa đơn HD{inv_id:04d}!")
@@ -582,7 +599,7 @@ class AppointmentFrame(ctk.CTkFrame):
 
 
 class ServiceDetailsModal(ctk.CTkToplevel):
-    """Modal xem chi tiết dịch vụ: hiển thị vật tư mặc định + vật tư đã sử dụng"""
+    """Modal chi tiết dịch vụ: hiển thị vật tư mặc định + đã dùng"""
     def __init__(self, parent, appointment_id, service_id, service_name, service_price):
         super().__init__(parent)
         self.appointment_id = appointment_id
@@ -622,8 +639,7 @@ class ServiceDetailsModal(ctk.CTkToplevel):
             return
         
         cursor = db.cursor()
-        
-        # 1. Lấy danh sách vật tư mặc định của service (service_products)
+        # 1. Lấy vật tư mặc định của service từ bảng service_products
         cursor.execute("""
             SELECT sp.product_id, p.product_name, p.price, p.unit, sp.quantity_needed
             FROM service_products sp
@@ -632,7 +648,7 @@ class ServiceDetailsModal(ctk.CTkToplevel):
         """, (self.service_id,))
         default_materials = cursor.fetchall()
         
-        # 2. Lấy vật tư đã dùng trong appointment (appointment_materials)
+        # 2. Lấy vật tư đã dùng trong appointment này (của service này)
         cursor.execute("""
             SELECT am.product_id, am.quantity_used
             FROM appointment_materials am
@@ -650,7 +666,7 @@ class ServiceDetailsModal(ctk.CTkToplevel):
             used_qty = used_materials.get(prod_id, default_qty)
             self.create_material_card(prod_id, name, price, unit, used_qty)
         
-        # Vật tư đã dùng nhưng không nằm trong danh sách mặc định (thêm thủ công)
+        # Vật tư đã dùng nhưng không có trong mặc định (thêm thủ công)
         for prod_id, used_qty in used_materials.items():
             if prod_id not in [m[0] for m in default_materials]:
                 db2 = connect_db()
@@ -668,7 +684,6 @@ class ServiceDetailsModal(ctk.CTkToplevel):
         
         left = ctk.CTkFrame(card, fg_color="transparent")
         left.pack(side="left", fill="x", expand=True, padx=15, pady=10)
-        
         ctk.CTkLabel(left, text=material_name, font=("Arial", 14, "bold"), text_color="#1e293b").pack(anchor="w")
         
         qty_frame = ctk.CTkFrame(left, fg_color="transparent")

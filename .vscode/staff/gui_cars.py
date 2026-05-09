@@ -348,9 +348,6 @@ class CarFrame(ctk.CTkFrame):
         ctk.CTkLabel(header, text="Quản lý xe", font=("Arial", 28, "bold"),
                     text_color="#1e293b").pack(side="left")
         
-        ctk.CTkButton(header, text="+ Thêm xe mới", fg_color="#2563eb", 
-                     font=("Arial", 13, "bold"), height=40,
-                     command=lambda: AddCarWindow(self)).pack(side="right")
 
         # Search bar
         search_frame = ctk.CTkFrame(self, fg_color="white", corner_radius=12, 

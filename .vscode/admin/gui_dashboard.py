@@ -27,6 +27,15 @@ class DashboardFrame(ctk.CTkFrame):
         ).pack(side="left", padx=30)
 
         self.filter_var = ctk.StringVar(value="Năm")
+        self.sync_btn = ctk.CTkButton(
+            header,
+            text="🔄 Đồng bộ",
+            width=120,
+            fg_color="#10b981",
+            hover_color="#059669",
+            command=self.update_data
+        )
+        self.sync_btn.pack(side="right", padx=10)
         ctk.CTkComboBox(
             header,
             values=["Ngày", "Tuần", "Tháng", "Năm"],
@@ -35,7 +44,7 @@ class DashboardFrame(ctk.CTkFrame):
             width=140,
             border_color="#e2e8f0",
             button_color="#2563eb"
-        ).pack(side="right", padx=30)
+        ).pack(side="right", padx=20)
 
         # ===== SCROLLABLE AREA =====
         self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
@@ -51,14 +60,14 @@ class DashboardFrame(ctk.CTkFrame):
         self.chart_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
         self.chart_frame.pack(fill="both", expand=True)
         self.chart_frame.grid_columnconfigure((0, 1), weight=1)
+        self.chart_frame.grid_rowconfigure((0, 1), weight=1)
+
+        self.revenue_highlight_card = None
 
         # ===== START =====
         self.update_data()
         self.auto_refresh()
 
-    def auto_refresh(self):
-        self.update_data()
-        self.after(10000, self.auto_refresh) # 10s refresh 1 lần để tránh giật lag
 
     def get_data(self):
         db = connect_db()
@@ -66,10 +75,18 @@ class DashboardFrame(ctk.CTkFrame):
         now = datetime.now()
         mode = self.filter_var.get()
 
-        if mode == "Ngày": cond = f"DATE(service_date) = '{now.date()}'"
-        elif mode == "Tuần": cond = "YEARWEEK(service_date, 1) = YEARWEEK(NOW(), 1)"
-        elif mode == "Tháng": cond = f"MONTH(service_date) = {now.month} AND YEAR(service_date)={now.year}"
-        else: cond = "1=1"
+        if mode == "Ngày":
+            cond = "DATE(p.payment_date) = %s"
+            params = (now.date(),)
+        elif mode == "Tuần":
+            cond = "YEARWEEK(p.payment_date, 1) = YEARWEEK(NOW(), 1)"
+            params = ()
+        elif mode == "Tháng":
+            cond = "MONTH(p.payment_date) = %s AND YEAR(p.payment_date) = %s"
+            params = (now.month, now.year)
+        else:
+            cond = "YEAR(p.payment_date) = %s"
+            params = (now.year,)
 
         # Queries
         cursor.execute("SELECT COUNT(*) FROM customers")
@@ -78,29 +95,47 @@ class DashboardFrame(ctk.CTkFrame):
         cars = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM appointments")
         apps = cursor.fetchone()[0]
-        cursor.execute(f"SELECT SUM(price) FROM service_history WHERE {cond}")
+
+        cursor.execute(f"SELECT SUM(p.amount) FROM payments p WHERE {cond}", params)
         rev = to_float(cursor.fetchone()[0])
 
         # Revenue Line Chart (7 days)
         revenue = []
         for i in range(6, -1, -1):
             d = now - timedelta(days=i)
-            cursor.execute(f"SELECT SUM(price) FROM service_history WHERE DATE(service_date)='{d.date()}'")
+            cursor.execute("SELECT SUM(amount) FROM payments WHERE DATE(payment_date) = %s", (d.date(),))
             revenue.append((d.strftime("%d/%m"), to_float(cursor.fetchone()[0])))
 
         # Top Khách
         cursor.execute(f"""
-            SELECT c.full_name, SUM(h.price) FROM customers c
-            JOIN service_history h ON c.id = h.customer_id
-            WHERE {cond} GROUP BY c.id ORDER BY SUM(h.price) DESC LIMIT 5
-        """)
+            SELECT c.full_name, 
+                   COALESCE(SUM(p.amount), 0) as total_paid
+            FROM customers c
+            LEFT JOIN invoices i ON c.id = i.customer_id
+            LEFT JOIN payments p ON i.id = p.invoice_id AND {cond}
+            WHERE EXISTS (
+                SELECT 1
+                FROM payments p2
+                WHERE p2.invoice_id = i.id
+                  AND {cond}
+            )
+            GROUP BY c.id, c.full_name
+            ORDER BY total_paid DESC
+            LIMIT 5
+        """, params + params)
         top_cus = [(x[0], to_float(x[1])) for x in cursor.fetchall()]
 
         # Top Dịch Vụ
         cursor.execute(f"""
-            SELECT service_name, COUNT(*) FROM service_history
-            WHERE {cond} GROUP BY service_name ORDER BY COUNT(*) DESC LIMIT 8
-        """)
+            SELECT ii.service_name, COUNT(DISTINCT ii.invoice_id)
+            FROM invoice_items ii
+            JOIN invoices i ON ii.invoice_id = i.id
+            JOIN payments p ON p.invoice_id = i.id
+            WHERE {cond}
+            GROUP BY ii.service_name
+            ORDER BY COUNT(DISTINCT ii.invoice_id) DESC
+            LIMIT 8
+        """, params)
         top_svc = cursor.fetchall()
 
         db.close()
@@ -121,12 +156,15 @@ class DashboardFrame(ctk.CTkFrame):
             ("Doanh thu kỳ", f"{rev:,.0f}đ", "#10b981")
         ]
 
+        self.revenue_highlight_card = None
         for i, (t, v, color) in enumerate(stats):
             card = ctk.CTkFrame(self.stat_frame, fg_color="white", border_width=1, border_color="#e2e8f0", corner_radius=12)
             card.grid(row=0, column=i, padx=10, sticky="nsew")
             
             ctk.CTkLabel(card, text=t, font=("Arial", 13), text_color="#64748b").pack(pady=(15, 0))
             ctk.CTkLabel(card, text=v, font=("Arial", 22, "bold"), text_color=color).pack(pady=(5, 15))
+            if t == "Doanh thu kỳ":
+                self.revenue_highlight_card = card
 
         # ===== RENDER CHARTS =====
         # Chart 1: Doanh thu (Line)
@@ -150,6 +188,10 @@ class DashboardFrame(ctk.CTkFrame):
             ax3.bar([x[0] for x in top_svc], [x[1] for x in top_svc], color="#10b981")
         ax3.set_title("Phân tích dịch vụ (Số lượt)", fontsize=10, fontweight='bold')
         self.draw(fig3, 1, 0, colspan=2)
+
+    def auto_refresh(self):
+        self.update_data()
+        self.after(60000, self.auto_refresh)
 
     def draw(self, fig, r, c, colspan=1):
         canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)

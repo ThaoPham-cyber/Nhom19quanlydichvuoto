@@ -183,9 +183,7 @@ class CustomerFrame(ctk.CTkFrame):
         header.grid(row=0, column=0, sticky="ew", padx=30, pady=25)
         ctk.CTkLabel(header, text="Quản lý khách hàng", font=("Arial", 28, "bold"), 
                     text_color="#1e293b").pack(side="left")
-        ctk.CTkButton(header, text="+ Thêm mới", fg_color="#2563eb", 
-                     font=("Arial", 13, "bold"), height=40, 
-                     command=lambda: CustomerWindow(self)).pack(side="right")
+        
 
         # Search bar
         search_frame = ctk.CTkFrame(self, fg_color="white", corner_radius=12, height=55, 

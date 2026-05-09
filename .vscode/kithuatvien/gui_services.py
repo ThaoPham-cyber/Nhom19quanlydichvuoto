@@ -114,7 +114,9 @@ class ServiceFrame(ctk.CTkFrame):
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.grid(row=0, column=0, sticky="ew", padx=30, pady=20)
         ctk.CTkLabel(header, text="Dịch vụ", font=("Arial", 26, "bold")).pack(side="left")
-       
+        ctk.CTkButton(header, text="+ Thêm dịch vụ", fg_color="#2563eb", 
+                      command=lambda: ServiceFormWindow(self)).pack(side="right")
+
         # Tìm kiếm
         search_f = ctk.CTkFrame(self, fg_color="white", corner_radius=10, border_width=1, border_color="#e2e8f0")
         search_f.grid(row=1, column=0, sticky="ew", padx=30, pady=(0, 20))

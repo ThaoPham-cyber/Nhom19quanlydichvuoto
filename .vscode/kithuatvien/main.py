@@ -1,11 +1,6 @@
 import customtkinter as ctk
-
-from gui_dashboard import DashboardFrame
-from gui_customers import CustomerFrame
-from gui_cars import CarFrame 
 from gui_services import ServiceFrame 
 from gui_inventory import InventoryFrame 
-from gui_employees import EmployeeFrame
 
 
 class AutoCareApp(ctk.CTk):
@@ -39,12 +34,9 @@ class AutoCareApp(ctk.CTk):
         self.frames = {}
 
         pages = (
-            DashboardFrame,
-            CustomerFrame,
-            CarFrame,
+           
             ServiceFrame,
             InventoryFrame,
-            EmployeeFrame,
             
         )
 
@@ -58,12 +50,8 @@ class AutoCareApp(ctk.CTk):
             frame.grid(row=0, column=0, sticky="nsew")
 
         # ===== NAV BUTTON =====
-        self.create_nav_button("Tổng quan", "DashboardFrame")
-        self.create_nav_button("Khách hàng", "CustomerFrame")
-        self.create_nav_button("Xe", "CarFrame")
         self.create_nav_button("Dịch vụ", "ServiceFrame")
         self.create_nav_button("Kho hàng", "InventoryFrame")
-        self.create_nav_button("Nhân viên", "EmployeeFrame")
         self.show_frame("DashboardFrame")
 
     # ================= NAV =================

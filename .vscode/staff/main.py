@@ -9,7 +9,6 @@ from datetime import datetime
 from gui_customers import CustomerFrame
 from gui_cars import CarFrame 
 from gui_services import ServiceFrame 
-from gui_inventory import InventoryFrame 
 from gui_appointments import AppointmentFrame
 from gui_payments import PaymentFrame
 import os
@@ -601,7 +600,6 @@ class AutoCareApp(ctk.CTk):
             ("👥 Khách hàng", "CustomerFrame"),
             ("🚗 Xe", "CarFrame"),
             ("🔧 Dịch vụ", "ServiceFrame"),
-            ("📦 Kho hàng", "InventoryFrame"),
             ("💰 Thanh toán", "PaymentFrame")
         ]
 
@@ -634,7 +632,7 @@ class AutoCareApp(ctk.CTk):
             "CustomerFrame": CustomerFrame,
             "CarFrame": CarFrame,
             "ServiceFrame": ServiceFrame,
-            "InventoryFrame": InventoryFrame,
+
             "AppointmentFrame": AppointmentFrame,
             "PaymentFrame": PaymentFrame
         }
