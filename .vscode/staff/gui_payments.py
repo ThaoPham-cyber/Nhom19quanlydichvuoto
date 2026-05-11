@@ -6,8 +6,6 @@ import os
 from PIL import Image
 
 
-
-
 class PaymentFrame(ctk.CTkFrame):
     def __init__(self, parent):
         super().__init__(parent, fg_color="#f8fafc")
@@ -378,77 +376,104 @@ class PaymentFrame(ctk.CTkFrame):
             else:
                 ctk.CTkLabel(main_frame, text="Không có vật tư nào được sử dụng", font=("Arial", 14), text_color="#64748b").pack(pady=50)
 
-    def show_materials_for_invoice(self, invoice_ids):
-        """Hiển thị popup vật tư của hóa đơn"""
-        materials_window = ctk.CTkToplevel(self)
-        materials_window.title("Vật tư sử dụng")
-        materials_window.geometry("500x450")
-        materials_window.attributes("-topmost", True)
-        materials_window.grab_set()
-        materials_window.configure(fg_color="white")
-        
-        ctk.CTkLabel(materials_window, text="📦 DANH SÁCH VẬT TƯ", font=("Arial", 18, "bold"), 
-                    text_color="#f59e0b").pack(pady=20)
-        
-        main_frame = ctk.CTkScrollableFrame(materials_window, fg_color="#f8fafc", corner_radius=10)
+    def show_materials_for_service(self, appointment_id, service_id, service_name):
+        """Popup hiển thị vật tư của một dịch vụ cụ thể trong lịch hẹn"""
+        win = ctk.CTkToplevel(self)
+        win.title(f"Vật tư dịch vụ: {service_name}")
+        win.geometry("600x400")
+        win.attributes("-topmost", True)
+        win.grab_set()
+        win.configure(fg_color="white")
+        ctk.CTkLabel(win, text=f"📦 VẬT TƯ DỊCH VỤ: {service_name}", font=("Arial", 18, "bold"), text_color="#1e293b").pack(pady=20)
+        main_frame = ctk.CTkScrollableFrame(win, fg_color="#f8fafc", corner_radius=10)
         main_frame.pack(fill="both", expand=True, padx=20, pady=15)
-        
+
         db = connect_db()
         if db:
             cursor = db.cursor()
-            if isinstance(invoice_ids, list) and len(invoice_ids) > 0:
-                placeholders = ','.join(['%s'] * len(invoice_ids))
-                cursor.execute(f"""
-                    SELECT ip.product_name, ip.quantity, ip.price, p.unit
-                    FROM invoice_products ip
-                    LEFT JOIN inventory p ON ip.product_id = p.id
-                    WHERE ip.invoice_id IN ({placeholders})
-                """, tuple(invoice_ids))
-            else:
-                cursor.execute("""
-                    SELECT ip.product_name, ip.quantity, ip.price, p.unit
-                    FROM invoice_products ip
-                    LEFT JOIN inventory p ON ip.product_id = p.id
-                    WHERE ip.invoice_id = %s
-                """, (invoice_ids,))
-            
+            cursor.execute("""
+                SELECT p.product_name, SUM(am.quantity_used) as total_qty, p.unit, p.price
+                FROM appointment_materials am
+                JOIN inventory p ON am.product_id = p.id
+                WHERE am.appointment_id = %s AND am.service_id = %s
+                GROUP BY am.product_id, p.product_name, p.unit, p.price
+            """, (appointment_id, service_id))
             materials = cursor.fetchall()
-            cursor.close()
+            db.close()
+            if materials:
+                total_cost = 0
+                for mat in materials:
+                    name = mat[0]
+                    qty = float(mat[1]) if mat[1] else 0
+                    unit = mat[2] if mat[2] else ""
+                    price = float(mat[3]) if mat[3] else 0
+                    total_price = qty * price
+                    total_cost += total_price
+                    card = ctk.CTkFrame(main_frame, fg_color="white", corner_radius=8, border_width=1, border_color="#e2e8f0")
+                    card.pack(fill="x", pady=5)
+                    left = ctk.CTkFrame(card, fg_color="transparent")
+                    left.pack(side="left", padx=15, pady=10)
+                    ctk.CTkLabel(left, text=name, font=("Arial", 14, "bold")).pack(anchor="w")
+                    ctk.CTkLabel(left, text=f"Số lượng: {int(qty)} {unit}", font=("Arial", 11), text_color="#64748b").pack(anchor="w")
+                    right = ctk.CTkFrame(card, fg_color="transparent")
+                    right.pack(side="right", padx=15, pady=10)
+                    ctk.CTkLabel(right, text=f"{int(price):,} ₫", font=("Arial", 14, "bold"), text_color="#10b981").pack(anchor="e")
+                    ctk.CTkLabel(right, text=f"Thành tiền: {int(total_price):,} ₫", font=("Arial", 11), text_color="#64748b").pack(anchor="e")
+                total_frame = ctk.CTkFrame(main_frame, fg_color="#f1f5f9", corner_radius=8)
+                total_frame.pack(fill="x", pady=10)
+                ctk.CTkLabel(total_frame, text=f"TỔNG GIÁ TRỊ VẬT TƯ: {int(total_cost):,} ₫", font=("Arial", 14, "bold"), text_color="#2563eb").pack(pady=10)
+            else:
+                ctk.CTkLabel(main_frame, text="Dịch vụ này không sử dụng vật tư nào", font=("Arial", 14), text_color="#64748b").pack(pady=50)
+
+    def show_materials_for_service(self, appointment_id, service_id):
+        """Popup hiển thị vật tư của một dịch vụ cụ thể trong lịch hẹn"""
+        win = ctk.CTkToplevel(self)
+        win.title("Vật tư dịch vụ")
+        win.geometry("600x400")
+        win.attributes("-topmost", True)
+        win.grab_set()
+        win.configure(fg_color="white")
+        ctk.CTkLabel(win, text="📦 VẬT TƯ DỊCH VỤ", font=("Arial", 18, "bold"), text_color="#1e293b").pack(pady=20)
+        main_frame = ctk.CTkScrollableFrame(win, fg_color="#f8fafc", corner_radius=10)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=15)
+
+        db = connect_db()
+        if db:
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT p.product_name, SUM(am.quantity_used) as total_qty, p.unit, p.price
+                FROM appointment_materials am
+                JOIN inventory p ON am.product_id = p.id
+                WHERE am.appointment_id = %s AND am.service_id = %s
+                GROUP BY am.product_id, p.product_name, p.unit, p.price
+            """, (appointment_id, service_id))
+            materials = cursor.fetchall()
             db.close()
             
             if materials:
                 total_cost = 0
-                for product_name, quantity, price, unit in materials:
-                    qty = int(quantity) if quantity is not None else 0
+                for product_name, total_qty, unit, price in materials:
+                    qty = float(total_qty) if total_qty else 0
                     unit_str = unit if unit else ""
-                    price_val = float(price) if price is not None else 0.0
-                    
-                    card = ctk.CTkFrame(main_frame, fg_color="white", corner_radius=8, 
-                                       border_width=1, border_color="#e2e8f0")
+                    price_val = float(price) if price else 0.0
+                    total_price = qty * price_val
+                    total_cost += total_price
+                    card = ctk.CTkFrame(main_frame, fg_color="white", corner_radius=8, border_width=1, border_color="#e2e8f0")
                     card.pack(fill="x", pady=5)
-                    
                     left = ctk.CTkFrame(card, fg_color="transparent")
                     left.pack(side="left", padx=15, pady=10)
                     ctk.CTkLabel(left, text=product_name, font=("Arial", 12, "bold")).pack(anchor="w")
-                    ctk.CTkLabel(left, text=f"Số lượng: {qty} {unit_str}", font=("Arial", 10), 
-                                text_color="#64748b").pack(anchor="w")
-                    
+                    ctk.CTkLabel(left, text=f"Số lượng: {int(qty)} {unit_str}", font=("Arial", 10), text_color="#64748b").pack(anchor="w")
                     right = ctk.CTkFrame(card, fg_color="transparent")
                     right.pack(side="right", padx=15, pady=10)
-                    total_price = qty * price_val
-                    total_cost += total_price
-                    ctk.CTkLabel(right, text=f"{int(price_val):,} ₫", font=("Arial", 11, "bold"), 
-                                text_color="#f59e0b").pack(anchor="e")
-                    ctk.CTkLabel(right, text=f"T: {int(total_price):,} ₫", font=("Arial", 10), 
-                                text_color="#64748b").pack(anchor="e")
+                    ctk.CTkLabel(right, text=f"{int(price_val):,} ₫", font=("Arial", 11, "bold"), text_color="#10b981").pack(anchor="e")
+                    ctk.CTkLabel(right, text=f"Thành tiền: {int(total_price):,} ₫", font=("Arial", 10), text_color="#64748b").pack(anchor="e")
                 
-                total_frame = ctk.CTkFrame(main_frame, fg_color="#fff5e6", corner_radius=8)
+                total_frame = ctk.CTkFrame(main_frame, fg_color="#f1f5f9", corner_radius=8)
                 total_frame.pack(fill="x", pady=10)
-                ctk.CTkLabel(total_frame, text=f"TỔNG GIÁ TRỊ VẬT TƯ: {int(total_cost):,} ₫", 
-                            font=("Arial", 12, "bold"), text_color="#f59e0b").pack(pady=10)
+                ctk.CTkLabel(total_frame, text=f"TỔNG GIÁ TRỊ VẬT TƯ: {int(total_cost):,} ₫", font=("Arial", 14, "bold"), text_color="#2563eb").pack(pady=10)
             else:
-                ctk.CTkLabel(main_frame, text="📭 Không có vật tư nào được sử dụng", 
-                            font=("Arial", 12), text_color="#64748b").pack(pady=50)
+                ctk.CTkLabel(main_frame, text="Dịch vụ này không sử dụng vật tư nào", font=("Arial", 14), text_color="#64748b").pack(pady=50)
 
     def full_payment(self, customer_row):
         total = float(customer_row[3])
@@ -482,9 +507,7 @@ class PaymentFrame(ctk.CTkFrame):
         print(f"❌ Không tìm thấy QR tại: {path}")
         return None
 
-
     def show_qr_confirmation_dialog(self, invoice_display, payment_method, default_amount, payment_note, callback):
-        """Dialog hiển thị QR code và thông tin thanh toán"""
         qr_dialog = ctk.CTkToplevel(self)
         qr_dialog.title(f"Xác nhận thanh toán - {payment_method}")
         qr_dialog.geometry("550x900")
@@ -586,6 +609,18 @@ class PaymentFrame(ctk.CTkFrame):
         invoice_id_list = [int(x) for x in invoice_ids.split(",") if x.strip()]
         default_amount = float(default_amount)
 
+        # Lấy appointment_id (chỉ lấy từ invoice đầu tiên, giả sử mỗi hóa đơn chỉ có một appointment)
+        appointment_id = None
+        if invoice_id_list:
+            db = connect_db()
+            if db:
+                cursor = db.cursor()
+                cursor.execute("SELECT appointment_id FROM invoices WHERE id = %s", (invoice_id_list[0],))
+                row = cursor.fetchone()
+                if row:
+                    appointment_id = row[0]
+                db.close()
+
         invoice_display = f"HD{invoice_id_list[0]:04d}" if invoice_id_list else "---"
         if len(invoice_id_list) > 1:
             invoice_display += f" +{len(invoice_id_list) - 1}"
@@ -610,38 +645,26 @@ class PaymentFrame(ctk.CTkFrame):
             ("Đã thanh toán", f"{int(paid_amount):,} ₫"),
             ("Số tiền cần TT", f"{int(default_amount):,} ₫")
         ]
-        total_label = None
-        payment_label = None
         for label, value in info_fields:
             row_frame = ctk.CTkFrame(info_frame, fg_color="transparent")
             row_frame.pack(fill="x", padx=20, pady=8)
             ctk.CTkLabel(row_frame, text=label, font=("Arial", 13), text_color="#64748b").pack(side="left")
             value_color = "#ef4444" if "cần TT" in label else "#1e293b"
-            lbl = ctk.CTkLabel(row_frame, text=value, font=("Arial", 14, "bold"), text_color=value_color)
-            lbl.pack(side="right")
-            if label == "Tổng tiền":
-                total_label = lbl
-            elif label == "Số tiền cần TT":
-                payment_label = lbl
+            ctk.CTkLabel(row_frame, text=value, font=("Arial", 14, "bold"), text_color=value_color).pack(side="right")
 
-        # Hiển thị bảng dịch vụ sử dụng thay vì chỉnh sửa vật tư
-        invoice_id = invoice_id_list[0] if len(invoice_id_list) == 1 else None
-        
+        # Danh sách dịch vụ (có icon mắt)
         db = connect_db()
         if db:
             cursor = db.cursor()
-            
-            # Lấy danh sách dịch vụ từ invoice_items
             services_list = []
             if len(invoice_id_list) == 1:
                 cursor.execute("""
                     SELECT ii.service_id, ii.service_name, ii.price
                     FROM invoice_items ii
                     WHERE ii.invoice_id = %s
-                """, (invoice_id,))
+                """, (invoice_id_list[0],))
                 services_list = cursor.fetchall()
             else:
-                # Gộp dịch vụ từ nhiều hóa đơn
                 placeholders = ','.join(['%s'] * len(invoice_id_list))
                 cursor.execute(f"""
                     SELECT DISTINCT ii.service_id, ii.service_name, ii.price
@@ -649,10 +672,9 @@ class PaymentFrame(ctk.CTkFrame):
                     WHERE ii.invoice_id IN ({placeholders})
                 """, tuple(invoice_id_list))
                 services_list = cursor.fetchall()
-            
             cursor.close()
             db.close()
-            
+
             if services_list:
                 service_frame = ctk.CTkFrame(form_frame, fg_color="#e6f3ff", corner_radius=12,
                                             border_width=1, border_color="#3b82f6")
@@ -660,127 +682,91 @@ class PaymentFrame(ctk.CTkFrame):
                 ctk.CTkLabel(service_frame, text="💼 DỊCH VỤ SỬ DỤNG", font=("Arial", 13, "bold"),
                             text_color="#3b82f6").pack(anchor="w", padx=15, pady=(10, 5))
                 
-                # Bảng dịch vụ với scrollbar
-                table_container = ctk.CTkFrame(service_frame, fg_color="white", corner_radius=8)
-                table_container.pack(fill="x", padx=15, pady=(0, 10), ipady=0)
+                # Header bảng dịch vụ
+                header_row = ctk.CTkFrame(service_frame, fg_color="#f1f5f9", height=35)
+                header_row.pack(fill="x", padx=15, pady=(0,5))
+                ctk.CTkLabel(header_row, text="Tên dịch vụ", font=("Arial", 12, "bold"), text_color="#64748b", width=300).pack(side="left", padx=10)
+                ctk.CTkLabel(header_row, text="Giá", font=("Arial", 12, "bold"), text_color="#64748b", width=150).pack(side="left", padx=10)
+                ctk.CTkLabel(header_row, text="Vật tư", font=("Arial", 12, "bold"), text_color="#64748b", width=80).pack(side="left", padx=10)
                 
-                # Header (fixed)
-                header_frame = ctk.CTkFrame(table_container, fg_color="#f1f5f9", height=35)
-                header_frame.pack(fill="x", padx=1, pady=1)
-                header_frame.pack_propagate(False)
-                ctk.CTkLabel(header_frame, text="Tên dịch vụ", font=("Arial", 11, "bold"),
-                            text_color="#64748b").pack(side="left", padx=15, pady=8)
-                price_label_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-                price_label_frame.pack(side="right", padx=15, pady=8)
-                ctk.CTkLabel(price_label_frame, text="Giá", font=("Arial", 11, "bold"),
-                            text_color="#64748b").pack(side="left", padx=5)
-                
-                # Scrollable data area
-                scroll_services = ctk.CTkScrollableFrame(table_container, fg_color="white", corner_radius=0)
-                scroll_services.pack(fill="x", padx=1, pady=0)
-                
-                # Data rows
                 for service_id, service_name, price in services_list:
-                    row_frame = ctk.CTkFrame(scroll_services, fg_color="white", height=35)
-                    row_frame.pack(fill="x", padx=0, pady=0)
-                    row_frame.pack_propagate(False)
-                    
-                    left_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-                    left_frame.pack(side="left", padx=15, pady=8, fill="both", expand=True)
-                    ctk.CTkLabel(left_frame, text=service_name or "Không xác định", 
-                                font=("Arial", 11)).pack(side="left", anchor="w")
-                    
-                    right_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-                    right_frame.pack(side="right", padx=5, pady=8)
-                    ctk.CTkLabel(right_frame, text=f"{int(price):,} ₫", font=("Arial", 11),
-                                text_color="#10b981").pack(side="left", padx=5)
-                    
-                    # Nút xem vật tư (eye icon)
-                    eye_btn = ctk.CTkButton(right_frame, text="👁", width=28, height=28, 
-                                           fg_color="transparent", text_color="#3b82f6", 
-                                           font=("Arial", 12), hover_color="#e6f3ff",
-                                           command=lambda ids=invoice_id_list: self.show_materials_for_invoice(ids))
-                    eye_btn.pack(side="left", padx=2)
-                    
+                    row = ctk.CTkFrame(service_frame, fg_color="white", corner_radius=8)
+                    row.pack(fill="x", padx=15, pady=5)
+                    ctk.CTkLabel(row, text=service_name, font=("Arial", 12), width=300, anchor="w").pack(side="left", padx=10, pady=8)
+                    ctk.CTkLabel(row, text=f"{int(price):,} ₫", font=("Arial", 12, "bold"), text_color="#10b981", width=150).pack(side="left", padx=10, pady=8)
+                    # Nút mắt xem vật tư riêng của dịch vụ
+                    eye_btn = ctk.CTkButton(row, text="👁", width=30, height=30, fg_color="transparent", text_color="#3b82f6",
+                                           command=lambda aid=appointment_id, sid=service_id: self.show_materials_for_service(aid, sid))
+                    eye_btn.pack(side="left", padx=10, pady=8)
                     # Separator
-                    ctk.CTkFrame(scroll_services, height=1, fg_color="#e2e8f0").pack(fill="x")
-            
-            # Bảng vật tư sử dụng
-            materials_list = []
-            db = connect_db()
-            if db:
-                cursor = db.cursor()
-                if len(invoice_id_list) > 0:
-                    placeholders = ','.join(['%s'] * len(invoice_id_list))
-                    cursor.execute(f"""
-                        SELECT ip.product_name, ip.quantity, ip.price, p.unit
-                        FROM invoice_products ip
-                        LEFT JOIN inventory p ON ip.product_id = p.id
-                        WHERE ip.invoice_id IN ({placeholders})
-                    """, tuple(invoice_id_list))
-                    materials_list = cursor.fetchall()
-                cursor.close()
-                db.close()
-            
-            # Hiển thị bảng vật tư (luôn hiển thị)
-            material_frame = ctk.CTkFrame(form_frame, fg_color="#fff5e6", corner_radius=12,
-                                         border_width=1, border_color="#f59e0b")
-            material_frame.pack(fill="x", pady=10)
-            material_header = ctk.CTkFrame(material_frame, fg_color="transparent")
-            material_header.pack(fill="x", padx=15, pady=(10, 5))
-            ctk.CTkLabel(material_header, text="📦 VẬT TƯ SỬ DỤNG", font=("Arial", 13, "bold"),
-                        text_color="#f59e0b").pack(side="left")
-            if materials_list:
-                total_materials = len(materials_list)
-                ctk.CTkLabel(material_header, text=f"(Tổng: {total_materials} loại)", font=("Arial", 11),
-                            text_color="#f59e0b").pack(side="right")
-            
-            # Bảng vật tư
-            material_table = ctk.CTkFrame(material_frame, fg_color="white", corner_radius=8)
-            material_table.pack(fill="x", padx=15, pady=(0, 10))
-            
-            # Header
-            mat_header_frame = ctk.CTkFrame(material_table, fg_color="#f1f5f9", height=35)
-            mat_header_frame.pack(fill="x", padx=1, pady=1)
-            mat_header_frame.pack_propagate(False)
-            ctk.CTkLabel(mat_header_frame, text="Tên vật tư", font=("Arial", 11, "bold"),
-                        text_color="#64748b").pack(side="left", padx=15, pady=8)
-            mat_header_sub = ctk.CTkFrame(mat_header_frame, fg_color="transparent")
-            mat_header_sub.pack(side="right", padx=15, pady=8)
-            ctk.CTkLabel(mat_header_sub, text="Số lượng", font=("Arial", 11, "bold"),
-                        text_color="#64748b").pack(side="left", padx=10)
-            ctk.CTkLabel(mat_header_sub, text="Giá", font=("Arial", 11, "bold"),
-                        text_color="#64748b").pack(side="left", padx=10)
-            
-            # Scrollable materials
-            scroll_materials = ctk.CTkScrollableFrame(material_table, fg_color="white", corner_radius=0)
-            scroll_materials.pack(fill="x", padx=1, pady=0)
-            
-            if materials_list:
-                # Material rows
-                for product_name, quantity, price, unit in materials_list:
-                    mat_row = ctk.CTkFrame(scroll_materials, fg_color="white", height=35)
-                    mat_row.pack(fill="x", padx=0, pady=0)
-                    mat_row.pack_propagate(False)
-                    
-                    qty = int(quantity) if quantity is not None else 0
-                    unit_str = unit if unit else ""
-                    
-                    ctk.CTkLabel(mat_row, text=product_name or "Không xác định", 
-                                font=("Arial", 11)).pack(side="left", padx=15, pady=8, anchor="w")
-                    
-                    mat_right = ctk.CTkFrame(mat_row, fg_color="transparent")
-                    mat_right.pack(side="right", padx=15, pady=8)
-                    ctk.CTkLabel(mat_right, text=f"{qty} {unit_str}", font=("Arial", 11),
-                                text_color="#64748b").pack(side="left", padx=10)
-                    ctk.CTkLabel(mat_right, text=f"{int(price):,} ₫", font=("Arial", 11),
-                                text_color="#ef4444").pack(side="left", padx=10)
-                    
-                    # Separator
-                    ctk.CTkFrame(scroll_materials, height=1, fg_color="#e2e8f0").pack(fill="x")
-            else:
-                ctk.CTkLabel(scroll_materials, text="📭 Chưa có vật tư nào được sử dụng", 
-                            font=("Arial", 11), text_color="#64748b").pack(pady=15)
+                    ctk.CTkFrame(service_frame, height=1, fg_color="#e2e8f0").pack(fill="x", padx=15, pady=2)
+
+        # Bảng vật tư tổng hợp (toàn bộ hóa đơn)
+        materials_list = []
+        db = connect_db()
+        if db:
+            cursor = db.cursor()
+            if len(invoice_id_list) > 0:
+                placeholders = ','.join(['%s'] * len(invoice_id_list))
+                cursor.execute(f"""
+                    SELECT ip.product_name, ip.quantity, ip.price, p.unit
+                    FROM invoice_products ip
+                    LEFT JOIN inventory p ON ip.product_id = p.id
+                    WHERE ip.invoice_id IN ({placeholders})
+                """, tuple(invoice_id_list))
+                materials_list = cursor.fetchall()
+            cursor.close()
+            db.close()
+
+        material_frame = ctk.CTkFrame(form_frame, fg_color="#fff5e6", corner_radius=12,
+                                     border_width=1, border_color="#f59e0b")
+        material_frame.pack(fill="x", pady=10)
+        material_header = ctk.CTkFrame(material_frame, fg_color="transparent")
+        material_header.pack(fill="x", padx=15, pady=(10, 5))
+        ctk.CTkLabel(material_header, text="📦 VẬT TƯ SỬ DỤNG", font=("Arial", 13, "bold"),
+                    text_color="#f59e0b").pack(side="left")
+        if materials_list:
+            total_materials = len(materials_list)
+            ctk.CTkLabel(material_header, text=f"(Tổng: {total_materials} loại)", font=("Arial", 11),
+                        text_color="#f59e0b").pack(side="right")
+
+        material_table = ctk.CTkFrame(material_frame, fg_color="white", corner_radius=8)
+        material_table.pack(fill="x", padx=15, pady=(0, 10))
+        # Header
+        mat_header_frame = ctk.CTkFrame(material_table, fg_color="#f1f5f9", height=35)
+        mat_header_frame.pack(fill="x", padx=1, pady=1)
+        mat_header_frame.pack_propagate(False)
+        ctk.CTkLabel(mat_header_frame, text="Tên vật tư", font=("Arial", 11, "bold"),
+                    text_color="#64748b").pack(side="left", padx=15, pady=8)
+        mat_header_sub = ctk.CTkFrame(mat_header_frame, fg_color="transparent")
+        mat_header_sub.pack(side="right", padx=15, pady=8)
+        ctk.CTkLabel(mat_header_sub, text="Số lượng", font=("Arial", 11, "bold"),
+                    text_color="#64748b").pack(side="left", padx=10)
+        ctk.CTkLabel(mat_header_sub, text="Giá", font=("Arial", 11, "bold"),
+                    text_color="#64748b").pack(side="left", padx=10)
+
+        scroll_materials = ctk.CTkScrollableFrame(material_table, fg_color="white", corner_radius=0)
+        scroll_materials.pack(fill="x", padx=1, pady=0)
+
+        if materials_list:
+            for product_name, quantity, price, unit in materials_list:
+                mat_row = ctk.CTkFrame(scroll_materials, fg_color="white", height=35)
+                mat_row.pack(fill="x", padx=0, pady=0)
+                mat_row.pack_propagate(False)
+                qty = int(quantity) if quantity is not None else 0
+                unit_str = unit if unit else ""
+                ctk.CTkLabel(mat_row, text=product_name or "Không xác định", 
+                            font=("Arial", 11)).pack(side="left", padx=15, pady=8, anchor="w")
+                mat_right = ctk.CTkFrame(mat_row, fg_color="transparent")
+                mat_right.pack(side="right", padx=15, pady=8)
+                ctk.CTkLabel(mat_right, text=f"{qty} {unit_str}", font=("Arial", 11),
+                            text_color="#64748b").pack(side="left", padx=10)
+                ctk.CTkLabel(mat_right, text=f"{int(price):,} ₫", font=("Arial", 11),
+                            text_color="#ef4444").pack(side="left", padx=10)
+                ctk.CTkFrame(scroll_materials, height=1, fg_color="#e2e8f0").pack(fill="x")
+        else:
+            ctk.CTkLabel(scroll_materials, text="📭 Chưa có vật tư nào được sử dụng", 
+                        font=("Arial", 11), text_color="#64748b").pack(pady=15)
 
         ctk.CTkFrame(modal, height=1, fg_color="#e2e8f0").pack(fill="x", padx=40, pady=10)
 
@@ -828,7 +814,6 @@ class PaymentFrame(ctk.CTkFrame):
 
         ctk.CTkButton(btn_frame, text="✅ Xác nhận thanh toán", fg_color="#10b981", hover_color="#059669",
                      height=45, command=handle_payment).pack(side="right", fill="x", expand=True, padx=5)
-
 
     def process_payment_from_qr(self):
         if hasattr(self, 'temp_payment_info'):
