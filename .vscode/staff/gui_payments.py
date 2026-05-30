@@ -867,22 +867,25 @@ class PaymentFrame(ctk.CTkFrame):
         table_frame = ctk.CTkFrame(history_window, fg_color="white", corner_radius=12)
         table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         table_frame.grid_columnconfigure(0, weight=1)
-        table_frame.grid_rowconfigure(1, weight=1)
+        table_frame.grid_rowconfigure(0, weight=1)
         headers = ["Mã HĐ", "Khách hàng", "Biển số", "Tổng tiền", "Đã thanh toán", "Ngày thanh toán", "Phương thức", "Vật tư", "Ghi chú"]
-        header_frame = ctk.CTkFrame(table_frame, fg_color="#f1f5f9", height=40)
-        header_frame.grid(row=0, column=0, sticky="ew", padx=1, pady=(1, 0))
-        for i, text in enumerate(headers):
-            ctk.CTkLabel(header_frame, text=text, font=("Arial", 12, "bold"), text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="ew")
-            header_frame.grid_columnconfigure(i, weight=1)
         scroll_frame = ctk.CTkScrollableFrame(table_frame, fg_color="transparent")
-        scroll_frame.grid(row=1, column=0, sticky="nsew")
+        scroll_frame.grid(row=0, column=0, sticky="nsew")
         for i in range(len(headers)):
             scroll_frame.grid_columnconfigure(i, weight=1, uniform='phcol')
+        header_items = []
+        for i, text in enumerate(headers):
+            lbl = ctk.CTkLabel(scroll_frame, text=text, font=("Arial", 12, "bold"), text_color="#64748b")
+            lbl.grid(row=0, column=i, padx=10, pady=10, sticky="ew")
+            header_items.append(lbl)
+        data_widgets = []
         db = connect_db()
         if db:
             cursor = db.cursor()
             def load_history(*args):
-                for w in scroll_frame.winfo_children(): w.destroy()
+                for w in list(data_widgets):
+                    w.destroy()
+                data_widgets.clear()
                 search = f"%{search_entry.get()}%"
                 query = """
                     SELECT i.id, c.full_name, a.car_plate, i.total_amount, p.amount as paid_amount,
@@ -898,28 +901,49 @@ class PaymentFrame(ctk.CTkFrame):
                 cursor.execute(query, (search, search, search))
                 payments = cursor.fetchall()
                 if not payments:
-                    ctk.CTkLabel(scroll_frame, text="📭 Không có dữ liệu thanh toán", font=("Arial", 14), text_color="#64748b").pack(pady=50)
+                    empty_label = ctk.CTkLabel(scroll_frame, text="📭 Không có dữ liệu thanh toán", font=("Arial", 14), text_color="#64748b")
+                    empty_label.grid(row=1, column=0, columnspan=len(headers), pady=50, sticky="ew")
+                    data_widgets.append(empty_label)
                     return
                 for idx, pay in enumerate(payments):
                     # header is row 0; data starts at row 1; use one data row + separator per item
                     row_idx = idx * 2 + 1
-                    ctk.CTkLabel(scroll_frame, text=f"HD{pay[0]:04d}", font=("Arial", 12), text_color="#2563eb").grid(row=row_idx, column=0, padx=10, pady=8, sticky="ew")
-                    ctk.CTkLabel(scroll_frame, text=pay[1], font=("Arial", 12)).grid(row=row_idx, column=1, padx=10, pady=8, sticky="ew")
+                    lbl1 = ctk.CTkLabel(scroll_frame, text=f"HD{pay[0]:04d}", font=("Arial", 12), text_color="#2563eb")
+                    lbl1.grid(row=row_idx, column=0, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl1)
+                    lbl2 = ctk.CTkLabel(scroll_frame, text=pay[1], font=("Arial", 12))
+                    lbl2.grid(row=row_idx, column=1, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl2)
                     car_plate = pay[2] if pay[2] else "---"
-                    ctk.CTkLabel(scroll_frame, text=car_plate, font=("Arial", 12)).grid(row=row_idx, column=2, padx=10, pady=8, sticky="ew")
-                    ctk.CTkLabel(scroll_frame, text=f"{int(pay[3]):,} ₫", font=("Arial", 12)).grid(row=row_idx, column=3, padx=10, pady=8, sticky="ew")
-                    ctk.CTkLabel(scroll_frame, text=f"{int(pay[4]):,} ₫", font=("Arial", 12, "bold"), text_color="#10b981").grid(row=row_idx, column=4, padx=10, pady=8, sticky="ew")
+                    lbl3 = ctk.CTkLabel(scroll_frame, text=car_plate, font=("Arial", 12))
+                    lbl3.grid(row=row_idx, column=2, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl3)
+                    lbl4 = ctk.CTkLabel(scroll_frame, text=f"{int(pay[3]):,} ₫", font=("Arial", 12))
+                    lbl4.grid(row=row_idx, column=3, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl4)
+                    lbl5 = ctk.CTkLabel(scroll_frame, text=f"{int(pay[4]):,} ₫", font=("Arial", 12, "bold"), text_color="#10b981")
+                    lbl5.grid(row=row_idx, column=4, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl5)
                     date_str = pay[5].strftime("%d/%m/%Y %H:%M") if pay[5] else ""
-                    ctk.CTkLabel(scroll_frame, text=date_str, font=("Arial", 11)).grid(row=row_idx, column=5, padx=10, pady=8, sticky="ew")
+                    lbl6 = ctk.CTkLabel(scroll_frame, text=date_str, font=("Arial", 11))
+                    lbl6.grid(row=row_idx, column=5, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl6)
                     method_color = "#3b82f6" if pay[6] == "Chuyển khoản" else "#10b981" if pay[6] == "Tiền mặt" else "#8b5cf6"
-                    ctk.CTkLabel(scroll_frame, text=pay[6], font=("Arial", 11, "bold"), text_color=method_color).grid(row=row_idx, column=6, padx=10, pady=8, sticky="ew")
+                    lbl7 = ctk.CTkLabel(scroll_frame, text=pay[6], font=("Arial", 11, "bold"), text_color=method_color)
+                    lbl7.grid(row=row_idx, column=6, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl7)
                     product_text = f"{pay[8]} loại" if pay[8] > 0 else "Không"
                     product_color = "#10b981" if pay[8] > 0 else "#64748b"
-                    ctk.CTkLabel(scroll_frame, text=product_text, font=("Arial", 11), text_color=product_color).grid(row=row_idx, column=7, padx=10, pady=8, sticky="ew")
+                    lbl8 = ctk.CTkLabel(scroll_frame, text=product_text, font=("Arial", 11), text_color=product_color)
+                    lbl8.grid(row=row_idx, column=7, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl8)
                     note = pay[7] if pay[7] else "---"
-                    ctk.CTkLabel(scroll_frame, text=note, font=("Arial", 11), text_color="#64748b").grid(row=row_idx, column=8, padx=10, pady=8, sticky="ew")
-                    # separator row
-                    ctk.CTkFrame(scroll_frame, height=1, fg_color="#e2e8f0").grid(row=row_idx+1, column=0, columnspan=len(headers), sticky="ew", padx=10, pady=(2,2))
+                    lbl9 = ctk.CTkLabel(scroll_frame, text=note, font=("Arial", 11), text_color="#64748b")
+                    lbl9.grid(row=row_idx, column=8, padx=10, pady=8, sticky="ew")
+                    data_widgets.append(lbl9)
+                    sep = ctk.CTkFrame(scroll_frame, height=1, fg_color="#f1f5f9")
+                    sep.grid(row=row_idx+1, column=0, columnspan=len(headers), sticky="ew", padx=10, pady=(2,2))
+                    data_widgets.append(sep)
             search_entry.bind("<KeyRelease>", lambda e: load_history())
             load_history()
             db.close()
