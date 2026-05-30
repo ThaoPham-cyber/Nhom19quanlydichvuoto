@@ -235,13 +235,12 @@ class AppointmentFrame(ctk.CTkFrame):
         table_frame = ctk.CTkFrame(history_window, fg_color="white", corner_radius=12)
         table_frame.pack(fill="both", expand=True, padx=20, pady=(0,20))
         headers = ["Mã LH","Khách hàng","Biển số","Dịch vụ","Ngày hẹn","Giá","Trạng thái"]
-        header_frame2 = ctk.CTkFrame(table_frame, fg_color="#f1f5f9", height=40)
-        header_frame2.pack(fill="x", padx=1, pady=(1,0))
-        for i,text in enumerate(headers):
-            ctk.CTkLabel(header_frame2, text=text, font=("Arial",12,"bold"), text_color="#64748b").grid(row=0,column=i,padx=10,pady=10,sticky="w")
-            header_frame2.grid_columnconfigure(i, weight=1)
         scroll_frame = ctk.CTkScrollableFrame(table_frame, fg_color="transparent")
         scroll_frame.pack(fill="both", expand=True)
+        # Create header row inside the scrollable frame so columns align with data rows
+        for i, text in enumerate(headers):
+            ctk.CTkLabel(scroll_frame, text=text, font=("Arial",12,"bold"), text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="w")
+            scroll_frame.grid_columnconfigure(i, weight=1)
         db = connect_db()
         if db:
             cursor = db.cursor()
@@ -265,20 +264,20 @@ class AppointmentFrame(ctk.CTkFrame):
                 if not appts:
                     ctk.CTkLabel(scroll_frame, text="📭 Không có dữ liệu", font=("Arial",14), text_color="#64748b").pack(pady=50)
                     return
-                for idx,appt in enumerate(appts):
-                    row = ctk.CTkFrame(scroll_frame, fg_color="transparent", height=35)
-                    row.pack(fill="x", pady=2)
+                for idx, appt in enumerate(appts):
+                    # grid rows: header is at row 0, data starts at row 1; use two rows per item (data + separator)
+                    row_idx = idx * 2 + 1
                     dt = appt[4]
                     if isinstance(dt, str): dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
-                    ctk.CTkLabel(row, text=f"AP{appt[0]:04d}", font=("Arial",12), text_color="#2563eb").grid(row=0,column=0,padx=10,pady=8,sticky="w")
-                    ctk.CTkLabel(row, text=appt[1], font=("Arial",12)).grid(row=0,column=1,padx=10,pady=8,sticky="w")
-                    ctk.CTkLabel(row, text=appt[2], font=("Arial",12)).grid(row=0,column=2,padx=10,pady=8,sticky="w")
-                    ctk.CTkLabel(row, text=appt[3], font=("Arial",11)).grid(row=0,column=3,padx=10,pady=8,sticky="w")
-                    ctk.CTkLabel(row, text=dt.strftime("%d/%m/%Y %H:%M"), font=("Arial",11)).grid(row=0,column=4,padx=10,pady=8,sticky="w")
-                    ctk.CTkLabel(row, text=f"{int(appt[5]):,} đ" if appt[5] else "0 đ", font=("Arial",11,"bold"), text_color="#10b981").grid(row=0,column=5,padx=10,pady=8,sticky="w")
-                    ctk.CTkLabel(row, text="✅ Đã bàn giao", font=("Arial",11), text_color="#10b981").grid(row=0,column=6,padx=10,pady=8,sticky="w")
-                    if idx < len(appts)-1:
-                        ctk.CTkFrame(scroll_frame, height=1, fg_color="#e2e8f0").pack(fill="x", padx=10)
+                    ctk.CTkLabel(scroll_frame, text=f"AP{appt[0]:04d}", font=("Arial",12), text_color="#2563eb").grid(row=row_idx, column=0, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(scroll_frame, text=appt[1], font=("Arial",12)).grid(row=row_idx, column=1, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(scroll_frame, text=appt[2], font=("Arial",12)).grid(row=row_idx, column=2, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(scroll_frame, text=appt[3], font=("Arial",11)).grid(row=row_idx, column=3, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(scroll_frame, text=dt.strftime("%d/%m/%Y %H:%M"), font=("Arial",11)).grid(row=row_idx, column=4, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(scroll_frame, text=f"{int(appt[5]):,} đ" if appt[5] else "0 đ", font=("Arial",11,"bold"), text_color="#10b981").grid(row=row_idx, column=5, padx=10, pady=8, sticky="w")
+                    ctk.CTkLabel(scroll_frame, text="✅ Đã bàn giao", font=("Arial",11), text_color="#10b981").grid(row=row_idx, column=6, padx=10, pady=8, sticky="w")
+                    # separator row
+                    ctk.CTkFrame(scroll_frame, height=1, fg_color="#e2e8f0").grid(row=row_idx+1, column=0, columnspan=len(headers), sticky="ew", padx=10, pady=(2,2))
             search_entry.bind("<KeyRelease>", lambda e: load_history())
             load_history()
             db.close()
@@ -454,6 +453,8 @@ class AppointmentFrame(ctk.CTkFrame):
         svc_frame.grid(row=17, column=0, sticky="ew", pady=5)
         svc_scroll = ctk.CTkScrollableFrame(svc_frame, height=150, fg_color="transparent")
         svc_scroll.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        svc_frame.grid_columnconfigure(0, weight=1)
+        svc_scroll.grid_columnconfigure(0, weight=1)
 
         db = connect_db()
         cursor = db.cursor()
