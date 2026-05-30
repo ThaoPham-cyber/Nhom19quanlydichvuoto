@@ -364,32 +364,50 @@ class CarFrame(ctk.CTkFrame):
                                            border_width=1, border_color="#e2e8f0")
         self.table_container.grid(row=2, column=0, sticky="nsew", padx=30, pady=(0, 30))
         
-        self.create_table_header()
-        
         # Scrollable data area
         self.scroll_data = ctk.CTkScrollableFrame(self.table_container, fg_color="transparent", 
                                                    corner_radius=0)
         self.scroll_data.pack(fill="both", expand=True, padx=5, pady=5)
         
-        # Configure columns
+        # Configure columns and header row inside the same grid
         for i in range(5):
-            self.scroll_data.grid_columnconfigure(i, weight=1)
+            self.scroll_data.grid_columnconfigure(i, weight=1, uniform='carcol')
+        self.scroll_data.grid_rowconfigure(0, weight=0)
+
+        self.ensure_updated_timestamp()
+        self.create_table_header()
         
         self.load_data()
 
     def create_table_header(self):
-        header_frame = ctk.CTkFrame(self.table_container, fg_color="transparent", height=50)
-        header_frame.pack(fill="x", padx=20, pady=(10, 0))
-        
         headers = ["Biển số", "Hãng xe", "Mẫu xe", "Chủ xe", "Thao tác"]
         for i, text in enumerate(headers):
-            ctk.CTkLabel(header_frame, text=text, font=("Arial", 12, "bold"),
-                        text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="w")
+            ctk.CTkLabel(self.scroll_data, text=text, font=("Arial", 12, "bold"),
+                        text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="ew")
+        ctk.CTkFrame(self.scroll_data, height=1, fg_color="#e2e8f0").grid(
+            row=1, column=0, columnspan=5, sticky="ew", padx=10
+        )
+
+    def ensure_updated_timestamp(self):
+        db = connect_db()
+        if not db:
+            return
+        cursor = db.cursor()
+        cursor.execute("SHOW COLUMNS FROM cars LIKE 'updated_at'")
+        if not cursor.fetchone():
+            cursor.execute(
+                "ALTER TABLE cars ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
+            )
+            db.commit()
+        cursor.close()
+        db.close()
 
     def load_data(self):
-        # Clear existing data
+        # Clear existing data rows only, keep header and top separator
         for w in self.scroll_data.winfo_children():
-            w.destroy()
+            info = w.grid_info()
+            if info and info.get("row", 0) > 1:
+                w.destroy()
         
         db = connect_db()
         if not db:
@@ -403,36 +421,37 @@ class CarFrame(ctk.CTkFrame):
             FROM cars c
             JOIN customers cust ON c.customer_id = cust.id
             WHERE c.plate_number LIKE %s
-            ORDER BY c.plate_number
+            ORDER BY c.updated_at DESC, c.plate_number
         """
         cursor.execute(query, (search,))
         cars = cursor.fetchall()
         
         for idx, car in enumerate(cars):
-            row_idx = idx * 2
+            row_idx = idx * 2 + 2
             
             # Biển số
             ctk.CTkLabel(self.scroll_data, text=car[0], font=("Arial", 14, "bold"),
-                        text_color="#2563eb").grid(row=row_idx, column=0, padx=10, pady=12, sticky="w")
+                        text_color="#2563eb").grid(row=row_idx, column=0, padx=10, pady=12, sticky="ew")
             
             # Hãng xe
             brand_text = car[1] if car[1] else "—"
-            ctk.CTkLabel(self.scroll_data, text=brand_text, font=("Arial", 13)).grid(row=row_idx, column=1, padx=10, pady=12, sticky="w")
+            ctk.CTkLabel(self.scroll_data, text=brand_text, font=("Arial", 13)).grid(row=row_idx, column=1, padx=10, pady=12, sticky="ew")
             
             # Mẫu xe
             model_text = car[2] if car[2] else "—"
-            ctk.CTkLabel(self.scroll_data, text=model_text, font=("Arial", 13)).grid(row=row_idx, column=2, padx=10, pady=12, sticky="w")
+            ctk.CTkLabel(self.scroll_data, text=model_text, font=("Arial", 13)).grid(row=row_idx, column=2, padx=10, pady=12, sticky="ew")
             
             # Chủ xe
-            ctk.CTkLabel(self.scroll_data, text=car[3], font=("Arial", 13)).grid(row=row_idx, column=3, padx=10, pady=12, sticky="w")
+            ctk.CTkLabel(self.scroll_data, text=car[3], font=("Arial", 13)).grid(row=row_idx, column=3, padx=10, pady=12, sticky="ew")
             
             # Action buttons
             btn_frame = ctk.CTkFrame(self.scroll_data, fg_color="transparent")
-            btn_frame.grid(row=row_idx, column=4, padx=10, pady=12)
+            btn_frame.grid(row=row_idx, column=4, padx=10, pady=12, sticky="ew")
+            btn_frame.grid_columnconfigure(0, weight=1)
             
             ctk.CTkButton(btn_frame, text="👁", width=35, height=32, corner_radius=6,
                         fg_color="transparent", text_color="#3b82f6", font=("Arial", 14),
-                        command=lambda p=car[0]: CarDetailWindow(p)).pack(side="left", padx=2)
+                        command=lambda p=car[0]: CarDetailWindow(p)).pack(side="right", padx=2)
             
             ctk.CTkButton(btn_frame, text="✎", width=35, height=32, corner_radius=6,
                         fg_color="transparent", text_color="#64748b", font=("Arial", 14),

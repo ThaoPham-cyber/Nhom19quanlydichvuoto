@@ -246,8 +246,13 @@ class AppointmentFrame(ctk.CTkFrame):
         db = connect_db()
         if db:
             cursor = db.cursor()
+            def clear_data_rows():
+                for w in scroll_frame.winfo_children():
+                    info = w.grid_info()
+                    if info and info.get("row", 0) != 0:
+                        w.destroy()
             def load_history(*args):
-                for w in scroll_frame.winfo_children(): w.destroy()
+                clear_data_rows()
                 search = f"%{search_entry.get()}%"
                 cursor.execute("""
                     SELECT a.id, c.full_name, a.car_plate,
@@ -264,7 +269,7 @@ class AppointmentFrame(ctk.CTkFrame):
                 """, (search, search))
                 appts = cursor.fetchall()
                 if not appts:
-                    ctk.CTkLabel(scroll_frame, text="📭 Không có dữ liệu", font=("Arial",14), text_color="#64748b").pack(pady=50)
+                    ctk.CTkLabel(scroll_frame, text="📭 Không có dữ liệu", font=("Arial",14), text_color="#64748b").grid(row=1, column=0, columnspan=len(headers), pady=50)
                     return
                 for idx, appt in enumerate(appts):
                     # grid rows: header is at row 0, data starts at row 1; use two rows per item (data + separator)
