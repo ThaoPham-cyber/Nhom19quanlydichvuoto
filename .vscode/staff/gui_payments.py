@@ -72,7 +72,8 @@ class PaymentFrame(ctk.CTkFrame):
             self.scroll_data.grid_columnconfigure(i, weight=1, uniform='tablecol')
         # Place header labels inside the scrollable frame so they share column widths with data rows
         for i, text in enumerate(headers):
-            ctk.CTkLabel(self.scroll_data, text=text, font=("Arial", 12, "bold"), text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="w")
+            ctk.CTkLabel(self.scroll_data, text=text, font=("Arial", 12, "bold"), text_color="#64748b").grid(row=0, column=i, padx=10, pady=10, sticky="ew")
+        ctk.CTkFrame(self.scroll_data, height=1, fg_color="#e2e8f0").grid(row=1, column=0, columnspan=len(headers), sticky="ew", padx=10)
 
         self.load_invoices()
 
@@ -152,7 +153,9 @@ class PaymentFrame(ctk.CTkFrame):
 
     def load_invoices(self):
         for w in self.scroll_data.winfo_children():
-            w.destroy()
+            info = w.grid_info()
+            if info and info.get("row", 0) > 1:
+                w.destroy()
         db = connect_db()
         if not db:
             return
@@ -210,7 +213,7 @@ class PaymentFrame(ctk.CTkFrame):
             empty_label = ctk.CTkLabel(self.scroll_data,
                 text="📭 Không có hóa đơn nào cần thanh toán\n\nNhấn 'Đồng bộ hóa' để tạo hóa đơn từ lịch hẹn",
                 font=("Arial", 14), text_color="#64748b")
-            empty_label.pack(pady=50)
+            empty_label.grid(row=2, column=0, columnspan=len(headers), pady=50, sticky="ew")
             db.close()
             return
 
@@ -271,7 +274,7 @@ class PaymentFrame(ctk.CTkFrame):
                 status_text = "Chưa thanh toán"
                 actual_status = "Chưa thanh toán"
 
-            row_idx = idx * 2 + 1
+            row_idx = idx * 2 + 2
             display_customer = customer if len(customer) <= 20 else customer[:17] + "..."
             display_plate = car_plate if len(car_plate) <= 15 else car_plate[:12] + "..."
             display_services = services if len(services) <= 20 else services[:17] + "..."
@@ -721,7 +724,7 @@ class PaymentFrame(ctk.CTkFrame):
         info_frame = ctk.CTkFrame(main_scroll, fg_color="#f1f5f9", corner_radius=12)
         info_frame.pack(fill="x", padx=20, pady=10)
         if payment_method == "Chuyển khoản":
-            bank_info = "🏦 VIETCOMBANK\n💳 Số TK: 123456789\n👤 Chủ TK: AUTOCARE"
+            bank_info = "🏦 MBBANK\n💳 Số TK: 03557054\n👤 Chủ TK: Phạm Đức Thao"
         elif payment_method == "Momo":
             bank_info = "📱 VÍ MOMO\n📞 SĐT: 0987654321\n👤 Tên: AUTOCARE"
         else:

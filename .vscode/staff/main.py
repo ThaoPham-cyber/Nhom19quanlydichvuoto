@@ -195,7 +195,7 @@ class DashboardFrame(ctk.CTkFrame):
         ctk.CTkLabel(header, text="📊 Tổng quan", font=("Arial", 28, "bold"), 
                     text_color="#1e293b").pack(side="left")
         
-        ctk.CTkLabel(header, text="Xin chào Admin!", font=("Arial", 14), 
+        ctk.CTkLabel(header, text="Xin chào Lễ Tân!", font=("Arial", 14), 
                     text_color="#64748b").pack(side="left", padx=20)
         
         # Refresh controls
@@ -611,7 +611,7 @@ class AutoCareApp(ctk.CTk):
         # Admin info
         admin_frame = ctk.CTkFrame(self.sidebar, fg_color="transparent")
         admin_frame.pack(side="bottom", pady=20, fill="x", padx=15)
-        ctk.CTkLabel(admin_frame, text="👨‍💼 Admin", font=("Arial", 12, "bold"),
+        ctk.CTkLabel(admin_frame, text="👨‍💼 Staff", font=("Arial", 12, "bold"),
                     text_color="#e2e8f0").pack()
         ctk.CTkLabel(admin_frame, text="Quản lý hệ thống", font=("Arial", 10),
                     text_color="#64748b").pack()

@@ -46,28 +46,25 @@ class InventoryFrame(ctk.CTkFrame):
         self.table_container = ctk.CTkFrame(self, fg_color="white", corner_radius=12)
         self.table_container.grid(row=3, column=0, sticky="nsew", padx=30, pady=(0, 30))
         
-        self.create_table_header()
-
         self.scroll_data = ctk.CTkScrollableFrame(self.table_container, fg_color="transparent", corner_radius=0)
         self.scroll_data.pack(fill="both", expand=True, padx=5, pady=5)
         self.scroll_data.grid_columnconfigure((0,1,2,3,4,5,6), weight=2)
         self.scroll_data.grid_columnconfigure(7, weight=1)
 
+        self.create_table_header()
         self.load_inventory()
 
     def create_table_header(self):
-        header_table = ctk.CTkFrame(self.table_container, fg_color="transparent", height=50)
-        header_table.pack(fill="x", padx=20, pady=(10, 0))
-        header_table.grid_columnconfigure((0,1,2,3,4,5,6), weight=2)
-        header_table.grid_columnconfigure(7, weight=1)
-        
         headers = ["Mã hàng", "Tên hàng", "Danh mục", "Tồn kho", "Giá", "Vị trí", "Liên kết", "Thao tác"]
         for col, text in enumerate(headers):
-            ctk.CTkLabel(header_table, text=text, font=("Arial", 12, "bold"), text_color="#64748b").grid(row=0, column=col, sticky="w", padx=10)
+            ctk.CTkLabel(self.scroll_data, text=text, font=("Arial", 12, "bold"), text_color="#64748b").grid(row=0, column=col, sticky="ew", padx=10, pady=(10, 10))
+        ctk.CTkFrame(self.scroll_data, height=1, fg_color="#e2e8f0").grid(row=1, column=0, columnspan=8, sticky="ew", padx=10, pady=(0, 5))
 
     def load_inventory(self):
-        for w in self.scroll_data.winfo_children(): 
-            w.destroy()
+        for w in self.scroll_data.winfo_children():
+            info = w.grid_info()
+            if info and info.get("row", 0) > 1:
+                w.destroy()
         
         db = connect_db()
         if not db:
@@ -81,27 +78,28 @@ class InventoryFrame(ctk.CTkFrame):
         
         low_stock_count = 0
         for i, row in enumerate(items):
-            is_low = row[5] <= row[6] 
-            if is_low: 
+            is_low = row[5] <= row[6]
+            if is_low:
                 low_stock_count += 1
             
-            ctk.CTkLabel(self.scroll_data, text=row[1], font=("Arial", 12)).grid(row=i*2, column=0, sticky="w", padx=20, pady=12)
+            row_idx = i * 2 + 2
+            ctk.CTkLabel(self.scroll_data, text=row[1], font=("Arial", 12)).grid(row=row_idx, column=0, sticky="w", padx=20, pady=12)
             
             name_color = "#f97316" if is_low else "#1e293b"
             prefix = "⚠️ " if is_low else ""
-            ctk.CTkLabel(self.scroll_data, text=f"{prefix}{row[2]}", font=("Arial", 13, "bold"), text_color=name_color).grid(row=i*2, column=1, sticky="w", padx=10)
+            ctk.CTkLabel(self.scroll_data, text=f"{prefix}{row[2]}", font=("Arial", 13, "bold"), text_color=name_color).grid(row=row_idx, column=1, sticky="ew", padx=10)
             
             tag_bg = "#eff6ff" if row[3] == "Phụ tùng" else "#f5f3ff"
             tag_fg = "#2563eb" if row[3] == "Phụ tùng" else "#7c3aed"
-            ctk.CTkLabel(self.scroll_data, text=row[3], font=("Arial", 10, "bold"), fg_color=tag_bg, text_color=tag_fg, corner_radius=6, width=80, height=26).grid(row=i*2, column=2, sticky="w", padx=10)
+            ctk.CTkLabel(self.scroll_data, text=row[3], font=("Arial", 10, "bold"), fg_color=tag_bg, text_color=tag_fg, corner_radius=6, width=80, height=26).grid(row=row_idx, column=2, sticky="ew", padx=10)
             
             stock_f = ctk.CTkFrame(self.scroll_data, fg_color="transparent")
-            stock_f.grid(row=i*2, column=3, sticky="w", padx=10)
+            stock_f.grid(row=row_idx, column=3, sticky="ew", padx=10)
             ctk.CTkLabel(stock_f, text=f"{row[5]} {row[7]}", font=("Arial", 12, "bold")).pack(anchor="w")
             ctk.CTkLabel(stock_f, text=f"Tối thiểu: {row[6]}", font=("Arial", 10), text_color="#94a3b8").pack(anchor="w")
             
-            ctk.CTkLabel(self.scroll_data, text=f"{int(row[8]):,}đ", font=("Arial", 13, "bold")).grid(row=i*2, column=4, sticky="w", padx=10)
-            ctk.CTkLabel(self.scroll_data, text=row[9] if row[9] else "---", font=("Arial", 12), text_color="#64748b").grid(row=i*2, column=5, sticky="w", padx=10)
+            ctk.CTkLabel(self.scroll_data, text=f"{int(row[8]):,}đ", font=("Arial", 13, "bold")).grid(row=row_idx, column=4, sticky="ew", padx=10)
+            ctk.CTkLabel(self.scroll_data, text=row[9] if row[9] else "---", font=("Arial", 12), text_color="#64748b").grid(row=row_idx, column=5, sticky="ew", padx=10)
             
             # Lấy liên kết dịch vụ
             cursor.execute("""
@@ -113,16 +111,16 @@ class InventoryFrame(ctk.CTkFrame):
             linked_services = cursor.fetchall()
             link_text = ", ".join([ls[0] for ls in linked_services]) if linked_services else "Chưa liên kết"
             link_color = "#10b981" if linked_services else "#64748b"
-            ctk.CTkLabel(self.scroll_data, text=link_text[:30], font=("Arial", 11), text_color=link_color).grid(row=i*2, column=6, sticky="w", padx=10)
+            ctk.CTkLabel(self.scroll_data, text=link_text[:30], font=("Arial", 11), text_color=link_color).grid(row=row_idx, column=6, sticky="ew", padx=10)
             
             btn_f = ctk.CTkFrame(self.scroll_data, fg_color="transparent")
-            btn_f.grid(row=i*2, column=7, sticky="w", padx=(10, 0))
+            btn_f.grid(row=row_idx, column=7, sticky="ew", padx=(10, 0))
             ctk.CTkButton(btn_f, text="✎", width=32, height=32, corner_radius=6, fg_color="#f1f5f9", text_color="#64748b",
                           command=lambda r=row: self.open_edit_modal(r)).pack(side="left", padx=(0, 8))
             ctk.CTkButton(btn_f, text="🗑", width=32, height=32, corner_radius=6, fg_color="#fff1f2", text_color="#ef4444",
                           command=lambda r=row: self.delete_item(r[0], r[2])).pack(side="left")
 
-            ctk.CTkFrame(self.scroll_data, height=1, fg_color="#f1f5f9").grid(row=i*2+1, column=0, columnspan=8, sticky="ew", pady=(5, 0))
+            ctk.CTkFrame(self.scroll_data, height=1, fg_color="#f1f5f9").grid(row=row_idx+1, column=0, columnspan=8, sticky="ew", pady=(5, 0))
 
         if low_stock_count > 0:
             self.alert_label.configure(text=f"{low_stock_count} mặt hàng sắp hết hoặc dưới mức tối thiểu")
